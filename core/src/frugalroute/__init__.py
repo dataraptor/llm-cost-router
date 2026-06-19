@@ -33,7 +33,17 @@ from frugalroute.embed import embed, get_embedder
 from frugalroute.examples import load_examples
 from frugalroute.gate import GateOutcome, gate
 from frugalroute.generate import generate
+from frugalroute.harness import EvalRun, run_eval
 from frugalroute.llm import DEFAULT_TIERS, PRICING, cost_usd
+from frugalroute.metrics import (
+    accuracy,
+    baselines,
+    cost_reduction,
+    cost_reduction_at_target,
+    mean_cost,
+    oracle,
+    retention,
+)
 from frugalroute.models import EvalReport, FrontierPoint, GateVerdict, RouteResult
 from frugalroute.prompts import PROMPT_VERSION
 from frugalroute.router import route
@@ -45,6 +55,7 @@ __all__ = [
     "PROMPT_VERSION",
     "BenchItem",
     "EvalReport",
+    "EvalRun",
     "FrontierPoint",
     "GateOutcome",
     "GateVerdict",
@@ -52,8 +63,12 @@ __all__ = [
     "PredictiveRouter",
     "RouteResult",
     "Router",
+    "accuracy",
+    "baselines",
     "break_even_acceptance",
     "cascade_saves",
+    "cost_reduction",
+    "cost_reduction_at_target",
     "cost_usd",
     "embed",
     "extract_gsm8k_answer",
@@ -71,7 +86,11 @@ __all__ = [
     "load_examples",
     "load_router",
     "mean_cascade_cost",
+    "mean_cost",
+    "oracle",
+    "retention",
     "route",
+    "run_eval",
     "save_router",
     "train",
 ]

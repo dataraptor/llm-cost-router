@@ -18,6 +18,8 @@ lib/
 lib64/
 # Trained predictive-router classifiers (split 04) — artifacts, never committed.
 models/
+# Persisted eval runs (split 05) — generated provenance, never committed.
+eval/runs/
 parts/
 sdist/
 var/

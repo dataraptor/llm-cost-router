@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from collections import Counter
 from dataclasses import asdict
 from typing import Any
@@ -34,6 +35,15 @@ from frugalroute.classifier import (
 from frugalroute.classifier import train as train_classifier
 from frugalroute.embed import embed
 from frugalroute.examples import load_examples
+from frugalroute.harness import (
+    DEFAULT_TAUS,
+    DEFAULT_THETAS,
+    QUICK_TAUS,
+    QUICK_THETAS,
+    format_report,
+    run_eval,
+    write_run,
+)
 from frugalroute.llm import DEFAULT_TIERS, cheap_tier, get_client, strong_tier
 from frugalroute.models import RouteResult
 from frugalroute.prompts import PROMPT_VERSION
@@ -214,8 +224,109 @@ def _run_train(args: argparse.Namespace, client: Any, embedder: Any) -> int:
     return 0
 
 
+def _ensure_embedder(embedder: Any) -> Any:
+    """Return the injected embedder, or try to load the local one (None if absent).
+
+    Used by the predictive eval path; a missing/broken embedder (e.g. the optional
+    ``embed`` extra not installed, or a torch DLL issue) yields ``None`` so the CLI
+    can degrade to a cascade-only report rather than crash.
+    """
+    if embedder is not None:
+        return embedder
+    try:
+        from frugalroute.embed import get_embedder
+
+        return get_embedder()
+    except (ImportError, OSError, RuntimeError):
+        return None
+
+
+def _resolve_grids(args: argparse.Namespace) -> tuple[list[float], list[float], int]:
+    """Resolve the (taus, thetas, repeats) for the sweep from the eval flags."""
+    if args.quick:
+        taus, thetas, repeats = list(QUICK_TAUS), list(QUICK_THETAS), 1
+    else:
+        taus, thetas, repeats = list(DEFAULT_TAUS), list(DEFAULT_THETAS), args.repeats
+    if args.grid:
+        grid = [float(value) for value in args.grid.split(",") if value.strip()]
+        if grid:
+            # A single supplied grid drives both the cascade τ and predictive θ sweep.
+            taus, thetas = grid, grid
+    return taus, thetas, repeats
+
+
+def _run_eval(args: argparse.Namespace, client: Any, embedder: Any) -> int:
+    """Execute the ``eval`` subcommand (@api: sweeps the frozen test split). Exit code."""
+    if args.batch:
+        print(
+            "error: --batch needs the native Anthropic Batches backend; it is not "
+            "available with the current backend. Run without --batch.",
+            file=sys.stderr,
+        )
+        return 2
+
+    try:
+        taus, thetas, repeats = _resolve_grids(args)
+    except ValueError as exc:
+        print(f"error: invalid --grid ({exc}).", file=sys.stderr)
+        return 2
+
+    if client is None:
+        try:
+            client = get_client()
+        except RuntimeError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+
+    benchmarks = ["gsm8k", "mmlu"] if args.benchmark == "both" else [args.benchmark]
+    for benchmark in benchmarks:
+        strategy = args.strategy
+        run_embedder = embedder
+        if strategy in (PREDICTIVE, "both"):
+            run_embedder = _ensure_embedder(embedder)
+            if run_embedder is None:
+                if strategy == PREDICTIVE:
+                    print(
+                        "error: predictive eval needs the local embedder (the optional "
+                        "'embed' extra); it could not be loaded.",
+                        file=sys.stderr,
+                    )
+                    return 1
+                strategy = CASCADE
+                print(
+                    "note: predictive skipped (local embedder unavailable); "
+                    "reporting cascade only.",
+                    file=sys.stderr,
+                )
+
+        timestamp = time.strftime("%Y%m%dT%H%M%S")
+        try:
+            run = run_eval(
+                benchmark,
+                strategy=strategy,
+                repeats=repeats,
+                taus=taus,
+                thetas=thetas,
+                client=client,
+                embedder=run_embedder,
+                timestamp=timestamp,
+            )
+        except (ValueError, FileNotFoundError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        except RuntimeError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+
+        out = args.out or f"eval/runs/{benchmark}-{timestamp}.jsonl"
+        write_run(run, out)
+        print(format_report(run))
+        print(f"\nWrote run to {out}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
-    """Build the argparse parser (``route`` + ``train``; ``eval`` added in split 05)."""
+    """Build the argparse parser (``route`` + ``train`` + ``eval``)."""
     parser = argparse.ArgumentParser(
         prog="frugalroute",
         description="FrugalRoute - route a query through the cost-optimizing router.",
@@ -266,6 +377,41 @@ def build_parser() -> argparse.ArgumentParser:
     train_p.add_argument(
         "--out", help="Output path for the router (default: models/<benchmark>.joblib)."
     )
+
+    eval_p = sub.add_parser(
+        "eval", help="Sweep the Pareto frontier on the frozen test split (needs a key)."
+    )
+    eval_p.add_argument(
+        "--strategy",
+        choices=[CASCADE, PREDICTIVE, "both"],
+        default="both",
+        help="Strategy/strategies to evaluate (default: both).",
+    )
+    eval_p.add_argument(
+        "--benchmark",
+        choices=["gsm8k", "mmlu", "both"],
+        default="gsm8k",
+        help="Benchmark(s) to evaluate (default: gsm8k).",
+    )
+    eval_p.add_argument(
+        "--repeats", type=int, default=3, help="R: full-mode repeats for mean +/- spread."
+    )
+    eval_p.add_argument(
+        "--grid", help='Override the operating-point grid, e.g. "0.5,0.7,0.9" (tau and theta).'
+    )
+    eval_p.add_argument(
+        "--batch",
+        action="store_true",
+        help="Submit eval generations via the Batch API (50%% off; @api/Anthropic-only).",
+    )
+    eval_p.add_argument(
+        "--quick",
+        action="store_true",
+        help="Fast mode: small n, R=1, coarse grid (for iteration, not the headline).",
+    )
+    eval_p.add_argument(
+        "--out", help="Output path for the run JSONL (default: eval/runs/<ts>.jsonl)."
+    )
     return parser
 
 
@@ -281,6 +427,8 @@ def main(argv: list[str] | None = None, *, client: Any = None, embedder: Any = N
         return _run_route(args, client, embedder)
     if args.command == "train":
         return _run_train(args, client, embedder)
+    if args.command == "eval":
+        return _run_eval(args, client, embedder)
     parser.error(f"unknown command {args.command!r}")  # pragma: no cover - argparse guards
     return 2  # pragma: no cover
 
