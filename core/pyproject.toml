@@ -15,15 +15,23 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Live-demo backend: the supplied key is Azure OpenAI gpt-5.5, driven through the
+# Anthropic-shaped adapter in frugalroute.azure_client (imported lazily).
+azure = [
+    "openai>=1.30,<2",
+]
 dev = [
     "pytest>=8",
     "pytest-cov>=5",
     "ruff>=0.6",
     "mypy>=1.11",
+    "openai>=1.30,<2",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/frugalroute"]
+# Ship bundled package data (the demo examples) inside the wheel.
+include = ["src/frugalroute/data/*.json"]
 
 [tool.ruff]
 line-length = 100
@@ -46,4 +54,5 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 markers = [
     "api: tests that call the live Anthropic API; auto-skipped when ANTHROPIC_API_KEY is unset",
+    "azure: tests that call the live Azure OpenAI gpt-5.5 backend; auto-skipped when AZURE_OPENAI_API_KEY is unset",
 ]

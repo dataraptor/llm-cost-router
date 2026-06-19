@@ -1,0 +1,36 @@
+{
+  "test_frac": 0.2,
+  "seed": 0,
+  "benchmarks": {
+    "gsm8k": {
+      "n_total": 40,
+      "n_calibration": 32,
+      "n_test": 8,
+      "test_ids": [
+        "gsm8k-class-04",
+        "gsm8k-inv-02",
+        "gsm8k-recipe-02",
+        "gsm8k-save-03",
+        "gsm8k-sh-01",
+        "gsm8k-sh-03",
+        "gsm8k-speed-01",
+        "gsm8k-wage-05"
+      ]
+    },
+    "mmlu": {
+      "n_total": 40,
+      "n_calibration": 32,
+      "n_test": 8,
+      "test_ids": [
+        "mmlu-bio-01",
+        "mmlu-bio-03",
+        "mmlu-bio-05",
+        "mmlu-chem-02",
+        "mmlu-econ-01",
+        "mmlu-geo-05",
+        "mmlu-hist-05",
+        "mmlu-math-01"
+      ]
+    }
+  }
+}

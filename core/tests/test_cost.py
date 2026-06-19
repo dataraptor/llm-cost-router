@@ -59,8 +59,9 @@ def test_all_buckets_combined() -> None:
 
 
 def test_unknown_model_raises() -> None:
+    # "gpt-5.5" is now a priced demo backend (split 02); use a genuinely-unpriced id.
     with pytest.raises(KeyError):
-        cost_usd("gpt-5.5", 100, 100)
+        cost_usd("no-such-model", 100, 100)
 
 
 def test_zero_everything_is_zero() -> None:

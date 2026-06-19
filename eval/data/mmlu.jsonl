@@ -1,0 +1,40 @@
+{"id": "mmlu-phys-01", "subject": "physics", "question": "A 2 kg object speeds up from rest to 6 m/s. What is the change in its kinetic energy?\n(A) 12 J  (B) 24 J  (C) 36 J  (D) 72 J", "gold": "C"}
+{"id": "mmlu-phys-02", "subject": "physics", "question": "What is the SI unit of force?\n(A) joule  (B) newton  (C) watt  (D) pascal", "gold": "B"}
+{"id": "mmlu-phys-03", "subject": "physics", "question": "A car travels 150 m in 10 s at constant velocity. What is its speed?\n(A) 10 m/s  (B) 15 m/s  (C) 1500 m/s  (D) 1.5 m/s", "gold": "B"}
+{"id": "mmlu-phys-04", "subject": "physics", "question": "Which quantity is a vector?\n(A) mass  (B) temperature  (C) velocity  (D) energy", "gold": "C"}
+{"id": "mmlu-phys-05", "subject": "physics", "question": "Doubling the speed of an object multiplies its kinetic energy by what factor?\n(A) 2  (B) 3  (C) 4  (D) 1", "gold": "C"}
+{"id": "mmlu-math-01", "subject": "math", "question": "What is the value of 7 factorial divided by 5 factorial?\n(A) 35  (B) 42  (C) 30  (D) 12", "gold": "B"}
+{"id": "mmlu-math-02", "subject": "math", "question": "Solve for x: 3x + 6 = 21.\n(A) 5  (B) 9  (C) 7  (D) 3", "gold": "A"}
+{"id": "mmlu-math-03", "subject": "math", "question": "What is the slope of the line through (0, 1) and (2, 5)?\n(A) 1  (B) 2  (C) 3  (D) 4", "gold": "B"}
+{"id": "mmlu-math-04", "subject": "math", "question": "How many degrees are in the interior angles of a triangle, summed?\n(A) 90  (B) 180  (C) 270  (D) 360", "gold": "B"}
+{"id": "mmlu-math-05", "subject": "math", "question": "What is 15% of 200?\n(A) 30  (B) 15  (C) 45  (D) 20", "gold": "A"}
+{"id": "mmlu-chem-01", "subject": "chemistry", "question": "What is the chemical symbol for sodium?\n(A) S  (B) So  (C) Na  (D) Sn", "gold": "C"}
+{"id": "mmlu-chem-02", "subject": "chemistry", "question": "How many protons does a carbon atom have?\n(A) 6  (B) 12  (C) 14  (D) 8", "gold": "A"}
+{"id": "mmlu-chem-03", "subject": "chemistry", "question": "What is the pH of a neutral aqueous solution at 25 C?\n(A) 0  (B) 7  (C) 14  (D) 1", "gold": "B"}
+{"id": "mmlu-chem-04", "subject": "chemistry", "question": "Which gas is most abundant in Earth's atmosphere?\n(A) oxygen  (B) carbon dioxide  (C) nitrogen  (D) argon", "gold": "C"}
+{"id": "mmlu-chem-05", "subject": "chemistry", "question": "Water is composed of hydrogen and which other element?\n(A) carbon  (B) oxygen  (C) nitrogen  (D) helium", "gold": "B"}
+{"id": "mmlu-bio-01", "subject": "biology", "question": "Which organelle is the site of photosynthesis?\n(A) mitochondrion  (B) nucleus  (C) chloroplast  (D) ribosome", "gold": "C"}
+{"id": "mmlu-bio-02", "subject": "biology", "question": "What molecule carries genetic information in most organisms?\n(A) protein  (B) DNA  (C) lipid  (D) glucose", "gold": "B"}
+{"id": "mmlu-bio-03", "subject": "biology", "question": "Which blood cells primarily fight infection?\n(A) red blood cells  (B) platelets  (C) white blood cells  (D) plasma", "gold": "C"}
+{"id": "mmlu-bio-04", "subject": "biology", "question": "Photosynthesis primarily converts carbon dioxide and water into oxygen and what?\n(A) protein  (B) glucose  (C) nitrogen  (D) lipids", "gold": "B"}
+{"id": "mmlu-bio-05", "subject": "biology", "question": "What is the powerhouse of the cell?\n(A) nucleus  (B) mitochondrion  (C) vacuole  (D) cytoplasm", "gold": "B"}
+{"id": "mmlu-hist-01", "subject": "history", "question": "In which year did World War II end?\n(A) 1918  (B) 1939  (C) 1945  (D) 1950", "gold": "C"}
+{"id": "mmlu-hist-02", "subject": "history", "question": "Who was the first President of the United States?\n(A) Thomas Jefferson  (B) George Washington  (C) Abraham Lincoln  (D) John Adams", "gold": "B"}
+{"id": "mmlu-hist-03", "subject": "history", "question": "The ancient pyramids at Giza were built in which country?\n(A) Greece  (B) Iraq  (C) Egypt  (D) Mexico", "gold": "C"}
+{"id": "mmlu-hist-04", "subject": "history", "question": "The Renaissance began in which country?\n(A) France  (B) Italy  (C) England  (D) Spain", "gold": "B"}
+{"id": "mmlu-hist-05", "subject": "history", "question": "Which document begins with 'We the People'?\n(A) the Declaration of Independence  (B) the Magna Carta  (C) the U.S. Constitution  (D) the Bill of Rights", "gold": "C"}
+{"id": "mmlu-geo-01", "subject": "geography", "question": "What is the capital of Japan?\n(A) Seoul  (B) Beijing  (C) Tokyo  (D) Bangkok", "gold": "C"}
+{"id": "mmlu-geo-02", "subject": "geography", "question": "Which is the longest river in the world?\n(A) Amazon  (B) Nile  (C) Yangtze  (D) Mississippi", "gold": "B"}
+{"id": "mmlu-geo-03", "subject": "geography", "question": "On which continent is the Sahara Desert located?\n(A) Asia  (B) Australia  (C) Africa  (D) South America", "gold": "C"}
+{"id": "mmlu-geo-04", "subject": "geography", "question": "What is the largest ocean on Earth?\n(A) Atlantic  (B) Indian  (C) Arctic  (D) Pacific", "gold": "D"}
+{"id": "mmlu-geo-05", "subject": "geography", "question": "Mount Everest lies on the border of Nepal and which country?\n(A) India  (B) China  (C) Bhutan  (D) Pakistan", "gold": "B"}
+{"id": "mmlu-cs-01", "subject": "computer science", "question": "What does CPU stand for?\n(A) Central Process Unit  (B) Central Processing Unit  (C) Computer Personal Unit  (D) Central Peripheral Unit", "gold": "B"}
+{"id": "mmlu-cs-02", "subject": "computer science", "question": "What is the base of the binary number system?\n(A) 2  (B) 8  (C) 10  (D) 16", "gold": "A"}
+{"id": "mmlu-cs-03", "subject": "computer science", "question": "Which data structure uses last-in, first-out ordering?\n(A) queue  (B) stack  (C) array  (D) tree", "gold": "B"}
+{"id": "mmlu-cs-04", "subject": "computer science", "question": "How many bits are in one byte?\n(A) 4  (B) 8  (C) 16  (D) 32", "gold": "B"}
+{"id": "mmlu-cs-05", "subject": "computer science", "question": "What does 'HTTP' primarily transfer?\n(A) files over FTP  (B) hypertext over the web  (C) email messages  (D) database records", "gold": "B"}
+{"id": "mmlu-econ-01", "subject": "economics", "question": "What term describes a general rise in prices over time?\n(A) deflation  (B) recession  (C) inflation  (D) surplus", "gold": "C"}
+{"id": "mmlu-econ-02", "subject": "economics", "question": "If demand rises while supply is fixed, price tends to do what?\n(A) fall  (B) rise  (C) stay the same  (D) become zero", "gold": "B"}
+{"id": "mmlu-law-01", "subject": "professional law", "question": "Under the common-law felony-murder rule, the mental state required for the predicate felony is:\n(A) negligence  (B) the intent required for that felony  (C) strict liability  (D) premeditation", "gold": "B"}
+{"id": "mmlu-law-02", "subject": "professional law", "question": "A contract generally requires offer, acceptance, and what third element?\n(A) notarization  (B) consideration  (C) witnesses  (D) a written form", "gold": "B"}
+{"id": "mmlu-law-03", "subject": "professional law", "question": "Which amendment to the U.S. Constitution protects against unreasonable searches and seizures?\n(A) First  (B) Second  (C) Fourth  (D) Fifth", "gold": "C"}

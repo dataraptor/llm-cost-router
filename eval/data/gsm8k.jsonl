@@ -1,0 +1,40 @@
+{"id": "gsm8k-sh-01", "question": "Mara sold 48 bracelets on Friday and half as many on Saturday. How many bracelets did she sell in total?", "gold": 72}
+{"id": "gsm8k-sh-02", "question": "Mara sold 60 bracelets on Friday and half as many on Saturday. How many bracelets did she sell in total?", "gold": 90}
+{"id": "gsm8k-sh-03", "question": "Mara sold 84 bracelets on Friday and half as many on Saturday. How many bracelets did she sell in total?", "gold": 126}
+{"id": "gsm8k-sh-04", "question": "Mara sold 36 bracelets on Friday and half as many on Saturday. How many bracelets did she sell in total?", "gold": 54}
+{"id": "gsm8k-sh-05", "question": "Mara sold 100 bracelets on Friday and half as many on Saturday. How many bracelets did she sell in total?", "gold": 150}
+{"id": "gsm8k-wage-01", "question": "Sam earns $12 an hour. Yesterday he worked for 50 minutes. How much did he earn, in dollars?", "gold": 10}
+{"id": "gsm8k-wage-02", "question": "Sam earns $18 an hour. Yesterday he worked for 40 minutes. How much did he earn, in dollars?", "gold": 12}
+{"id": "gsm8k-wage-03", "question": "Sam earns $9 an hour. Yesterday he worked for 20 minutes. How much did he earn, in dollars?", "gold": 3}
+{"id": "gsm8k-wage-04", "question": "Sam earns $15 an hour. Yesterday he worked for 80 minutes. How much did he earn, in dollars?", "gold": 20}
+{"id": "gsm8k-wage-05", "question": "Sam earns $24 an hour. Yesterday he worked for 75 minutes. How much did he earn, in dollars?", "gold": 30}
+{"id": "gsm8k-change-01", "question": "A notebook costs $4. Lena buys 3 notebooks and pays with a $20 bill. How much change does she get, in dollars?", "gold": 8}
+{"id": "gsm8k-change-02", "question": "A notebook costs $2. Lena buys 5 notebooks and pays with a $15 bill. How much change does she get, in dollars?", "gold": 5}
+{"id": "gsm8k-change-03", "question": "A notebook costs $6. Lena buys 4 notebooks and pays with a $30 bill. How much change does she get, in dollars?", "gold": 6}
+{"id": "gsm8k-change-04", "question": "A notebook costs $3. Lena buys 7 notebooks and pays with a $25 bill. How much change does she get, in dollars?", "gold": 4}
+{"id": "gsm8k-change-05", "question": "A notebook costs $5. Lena buys 6 notebooks and pays with a $40 bill. How much change does she get, in dollars?", "gold": 10}
+{"id": "gsm8k-inv-01", "question": "A basket holds 20 oranges. 7 are eaten and then 5 more are added. How many oranges are in the basket now?", "gold": 18}
+{"id": "gsm8k-inv-02", "question": "A basket holds 50 oranges. 12 are eaten and then 8 more are added. How many oranges are in the basket now?", "gold": 46}
+{"id": "gsm8k-inv-03", "question": "A basket holds 15 oranges. 3 are eaten and then 9 more are added. How many oranges are in the basket now?", "gold": 21}
+{"id": "gsm8k-inv-04", "question": "A basket holds 40 oranges. 18 are eaten and then 6 more are added. How many oranges are in the basket now?", "gold": 28}
+{"id": "gsm8k-inv-05", "question": "A basket holds 33 oranges. 10 are eaten and then 10 more are added. How many oranges are in the basket now?", "gold": 33}
+{"id": "gsm8k-speed-01", "question": "A cyclist rides 30 miles and then 30 miles, taking 2 hours in total. What was the average speed, in miles per hour?", "gold": 30}
+{"id": "gsm8k-speed-02", "question": "A cyclist rides 45 miles and then 15 miles, taking 3 hours in total. What was the average speed, in miles per hour?", "gold": 20}
+{"id": "gsm8k-speed-03", "question": "A cyclist rides 60 miles and then 40 miles, taking 4 hours in total. What was the average speed, in miles per hour?", "gold": 25}
+{"id": "gsm8k-speed-04", "question": "A cyclist rides 50 miles and then 50 miles, taking 5 hours in total. What was the average speed, in miles per hour?", "gold": 20}
+{"id": "gsm8k-speed-05", "question": "A cyclist rides 24 miles and then 36 miles, taking 6 hours in total. What was the average speed, in miles per hour?", "gold": 10}
+{"id": "gsm8k-class-01", "question": "A class has 30 students, and 60% of them are girls. How many boys are in the class?", "gold": 12}
+{"id": "gsm8k-class-02", "question": "A class has 40 students, and 25% of them are girls. How many boys are in the class?", "gold": 30}
+{"id": "gsm8k-class-03", "question": "A class has 50 students, and 40% of them are girls. How many boys are in the class?", "gold": 30}
+{"id": "gsm8k-class-04", "question": "A class has 20 students, and 50% of them are girls. How many boys are in the class?", "gold": 10}
+{"id": "gsm8k-class-05", "question": "A class has 60 students, and 70% of them are girls. How many boys are in the class?", "gold": 18.000000000000004}
+{"id": "gsm8k-recipe-01", "question": "A recipe uses 2 cups of flour to make 4 servings. How many cups of flour are needed for 8 servings?", "gold": 4}
+{"id": "gsm8k-recipe-02", "question": "A recipe uses 3 cups of flour to make 6 servings. How many cups of flour are needed for 12 servings?", "gold": 6}
+{"id": "gsm8k-recipe-03", "question": "A recipe uses 1 cups of flour to make 2 servings. How many cups of flour are needed for 10 servings?", "gold": 5}
+{"id": "gsm8k-recipe-04", "question": "A recipe uses 4 cups of flour to make 8 servings. How many cups of flour are needed for 6 servings?", "gold": 3}
+{"id": "gsm8k-recipe-05", "question": "A recipe uses 5 cups of flour to make 5 servings. How many cups of flour are needed for 15 servings?", "gold": 15}
+{"id": "gsm8k-save-01", "question": "Priya saves $10 each week for 6 weeks, then spends $15. How much money does she have left, in dollars?", "gold": 45}
+{"id": "gsm8k-save-02", "question": "Priya saves $20 each week for 4 weeks, then spends $30. How much money does she have left, in dollars?", "gold": 50}
+{"id": "gsm8k-save-03", "question": "Priya saves $8 each week for 10 weeks, then spends $25. How much money does she have left, in dollars?", "gold": 55}
+{"id": "gsm8k-save-04", "question": "Priya saves $12 each week for 5 weeks, then spends $20. How much money does she have left, in dollars?", "gold": 40}
+{"id": "gsm8k-save-05", "question": "Priya saves $15 each week for 8 weeks, then spends $100. How much money does she have left, in dollars?", "gold": 20}

@@ -1,29 +1,64 @@
-"""Shared test fixtures and the @pytest.mark.api skip hook.
+"""Shared test fixtures and the live-API skip hooks.
 
-Tier-1 (no-key) unit tests use the injected ``fake_client``; Tier-2 tests marked
-``@pytest.mark.api`` are auto-skipped unless ``ANTHROPIC_API_KEY`` is set. No test
-in this package touches the network.
+Tier-1 (no-key) unit tests use the injected ``fake_client`` and never touch the
+network. Tier-2 tests call a live backend and auto-skip without a key:
+``@pytest.mark.api`` needs ``ANTHROPIC_API_KEY`` (the native Anthropic path);
+``@pytest.mark.azure`` needs ``AZURE_OPENAI_API_KEY`` (the gpt-5.5 adapter path,
+the live-demo backend for this build — see ``frugalroute.azure_client``).
+
+A repo-root ``.env`` is loaded (without overriding already-set vars) so the
+supplied Azure credentials are picked up automatically when present.
 """
 
 from __future__ import annotations
 
 import os
 from collections.abc import Callable, Iterable
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 
-def pytest_collection_modifyitems(config: pytest.Config, items: Iterable[pytest.Item]) -> None:
-    """Skip every ``@pytest.mark.api`` test when ANTHROPIC_API_KEY is unset."""
-    if os.environ.get("ANTHROPIC_API_KEY"):
+def _load_dotenv() -> None:
+    """Load ``KEY=VALUE`` pairs from the repo-root ``.env`` into the environment.
+
+    Dependency-free and non-overriding (an already-exported var always wins).
+    Silently does nothing if no ``.env`` exists. conftest.py lives at
+    ``core/tests/``, so the repo root is two levels up.
+    """
+    env_path = Path(__file__).resolve().parents[2] / ".env"
+    if not env_path.exists():
         return
+    for raw in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key:
+            os.environ.setdefault(key, value)
+
+
+_load_dotenv()
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: Iterable[pytest.Item]) -> None:
+    """Skip live-API tests when their backend's key is unset."""
+    have_anthropic = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    have_azure = bool(os.environ.get("AZURE_OPENAI_API_KEY"))
     skip_api = pytest.mark.skip(
         reason="requires ANTHROPIC_API_KEY (set it to run @pytest.mark.api tests)"
     )
+    skip_azure = pytest.mark.skip(
+        reason="requires AZURE_OPENAI_API_KEY (set it to run @pytest.mark.azure tests)"
+    )
     for item in items:
-        if "api" in item.keywords:
+        if "api" in item.keywords and not have_anthropic:
             item.add_marker(skip_api)
+        if "azure" in item.keywords and not have_azure:
+            item.add_marker(skip_azure)
 
 
 # --- Minimal fakes standing in for the Anthropic SDK response surface. ---

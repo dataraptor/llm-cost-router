@@ -26,6 +26,13 @@ PRICING: dict[str, dict[str, float]] = {
     "claude-haiku-4-5": {"input": 1.0, "output": 5.0},
     "claude-sonnet-4-6": {"input": 3.0, "output": 15.0},
     "claude-opus-4-8": {"input": 5.0, "output": 25.0},
+    # --- Live-demo backend (split 02). The only API key available is Azure
+    #     OpenAI gpt-5.5, not Anthropic, so the engine's Anthropic-shaped client
+    #     interface is driven by an adapter (``azure_client.py``) that calls
+    #     gpt-5.5. This entry lets ``cost_usd`` price that path. The numbers are
+    #     APPROXIMATE public GPT-5-tier list prices, NOT part of the pinned
+    #     Anthropic gradient the eval headline is built on (00-INSTRUCTIONS §3).
+    "gpt-5.5": {"input": 1.25, "output": 10.0},
 }
 
 # --- Config-driven, ordered tier list (cheap → strong). 2-tier default (D2);

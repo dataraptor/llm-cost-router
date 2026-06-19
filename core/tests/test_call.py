@@ -80,9 +80,11 @@ def test_structured_path_surfaces_parsed(fake_client, fake_usage) -> None:
 
 def test_adversarial_unknown_model_raises(fake_client, fake_usage) -> None:
     # R10 (a): an unpriced model must raise, not silently produce a 0 cost.
+    # (Sentinel is a genuinely-unpriced id; "gpt-5.5" is now a priced demo
+    # backend, see llm.PRICING / split 02.)
     client = fake_client(usage=fake_usage(input_tokens=100, output_tokens=100))
     with pytest.raises(KeyError):
-        call(client, "gpt-5.5", "sys", "user")
+        call(client, "no-such-model", "sys", "user")
 
 
 def test_adversarial_refusal_content_never_indexed(fake_client) -> None:
