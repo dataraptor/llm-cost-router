@@ -162,6 +162,64 @@ def fake_client() -> Callable[..., FakeClient]:
     return _make
 
 
+class _ScriptedMessages:
+    """Returns canned responses in order, across both ``create`` and ``parse``."""
+
+    def __init__(self, responses: list[FakeResponse]) -> None:
+        self._responses = list(responses)
+        self._index = 0
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    def _next(self, method: str, kwargs: dict[str, Any]) -> FakeResponse:
+        self.calls.append((method, kwargs))
+        if self._index >= len(self._responses):
+            raise AssertionError(
+                f"ScriptedClient ran out of canned responses (call #{self._index + 1})"
+            )
+        response = self._responses[self._index]
+        self._index += 1
+        return response
+
+    def create(self, **kwargs: Any) -> FakeResponse:
+        return self._next("create", kwargs)
+
+    def parse(self, **kwargs: Any) -> FakeResponse:
+        return self._next("parse", kwargs)
+
+
+class ScriptedClient:
+    """A fake client that hands out a *sequence* of responses for the cascade.
+
+    The cascade makes its calls in a fixed order (cheap generate → gate parse →
+    strong generate), so a single ordered queue — consumed by both ``create`` and
+    ``parse`` — scripts a whole route deterministically.
+    """
+
+    def __init__(self, responses: list[FakeResponse]) -> None:
+        self.messages = _ScriptedMessages(responses)
+
+    @property
+    def calls(self) -> list[tuple[str, dict[str, Any]]]:
+        """The (method, kwargs) of every call made, in order."""
+        return self.messages.calls
+
+
+@pytest.fixture
+def scripted_client() -> Callable[..., ScriptedClient]:
+    """Factory: build a ``ScriptedClient`` from a list of ``FakeResponse`` objects."""
+
+    def _make(responses: list[FakeResponse]) -> ScriptedClient:
+        return ScriptedClient(responses)
+
+    return _make
+
+
+@pytest.fixture
+def fake_response() -> type[FakeResponse]:
+    """The ``FakeResponse`` class, for building scripted cascade sequences."""
+    return FakeResponse
+
+
 @pytest.fixture
 def fake_usage() -> type[FakeUsage]:
     """The ``FakeUsage`` class, for building canned ``response.usage`` objects."""

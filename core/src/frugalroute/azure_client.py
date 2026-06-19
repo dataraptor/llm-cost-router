@@ -13,8 +13,11 @@ Design notes:
 - The translation (:func:`to_anthropic_response`) is a **pure function** so the
   full mapping (finish-reason → stop-reason, OpenAI usage → the four Anthropic
   token buckets, content extraction, refusals) is unit-testable with no network.
-- ``parse`` (structured output for the cascade gate) is intentionally **not**
-  implemented here yet; it arrives with the gate in split 03.
+- ``parse`` (structured output for the cascade gate, split 03) mirrors
+  ``anthropic.messages.parse``: it drives OpenAI structured outputs with the
+  pydantic ``output_format`` and exposes the validated model on
+  ``response.parsed_output``. The translation (:func:`to_anthropic_parsed_response`)
+  is likewise a pure function.
 """
 
 from __future__ import annotations
@@ -112,6 +115,53 @@ def to_anthropic_response(raw: Any) -> _Response:
     return _Response(stop_reason=stop_reason, content=blocks, usage=_map_usage(raw.usage))
 
 
+def to_anthropic_parsed_response(raw: Any) -> _Response:
+    """Translate an OpenAI *parsed* chat-completion into an Anthropic-shaped response.
+
+    Pure (no I/O). The validated pydantic model (``message.parsed``) is exposed on
+    ``parsed_output``, matching ``anthropic.messages.parse``. A content-filter
+    finish reason or a populated ``message.refusal`` becomes
+    ``stop_reason="refusal"`` with no parsed output, so the engine's refusal-safe
+    gate path triggers exactly as for a native Anthropic refusal.
+    """
+    choice = raw.choices[0]
+    message = choice.message
+    finish = choice.finish_reason or ""
+    refusal = getattr(message, "refusal", None)
+
+    if refusal or finish == "content_filter":
+        return _Response(
+            stop_reason="refusal",
+            content=[],
+            usage=_map_usage(raw.usage),
+            stop_details={"reason": "refusal"},
+            parsed_output=None,
+        )
+
+    parsed = getattr(message, "parsed", None)
+    text = message.content or ""
+    blocks = [_TextBlock(text=text)] if text else []
+    stop_reason = _FINISH_REASON_MAP.get(finish, finish or "end_turn")
+    return _Response(
+        stop_reason=stop_reason,
+        content=blocks,
+        usage=_map_usage(raw.usage),
+        parsed_output=parsed,
+    )
+
+
+def _completions_parse(openai_client: Any, **kwargs: Any) -> Any:
+    """Call the OpenAI structured-output parse helper, tolerating SDK layout.
+
+    The parse helper lives at ``chat.completions.parse`` in current SDKs and at
+    ``beta.chat.completions.parse`` in older ones; prefer the former, fall back.
+    """
+    completions = openai_client.chat.completions
+    if hasattr(completions, "parse"):
+        return completions.parse(**kwargs)
+    return openai_client.beta.chat.completions.parse(**kwargs)
+
+
 class _AzureMessages:
     """Anthropic-shaped ``client.messages`` backed by OpenAI chat completions."""
 
@@ -143,6 +193,34 @@ class _AzureMessages:
             max_completion_tokens=max_tokens,
         )
         return to_anthropic_response(raw)
+
+    def parse(
+        self,
+        *,
+        model: str,
+        max_tokens: int,
+        system: str,
+        messages: list[dict[str, str]],
+        output_format: Any,
+        **_ignored: Any,
+    ) -> _Response:
+        """Mirror ``anthropic.messages.parse`` over OpenAI structured outputs.
+
+        ``output_format`` is the pydantic model the gate expects (``GateVerdict``);
+        it is passed to the OpenAI parse helper as ``response_format`` and the
+        validated instance is returned on ``response.parsed_output``. Like
+        ``create``, the deployment is fixed (gpt-5.5), only ``max_completion_tokens``
+        is sent, and no sampling params are used.
+        """
+        oai_messages = [{"role": "system", "content": system}, *messages]
+        raw = _completions_parse(
+            self._client,
+            model=self._deployment,
+            messages=oai_messages,
+            max_completion_tokens=max_tokens,
+            response_format=output_format,
+        )
+        return to_anthropic_parsed_response(raw)
 
 
 class AzureAnthropicClient:

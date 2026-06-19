@@ -14,9 +14,12 @@ import pytest
 from frugalroute.azure_client import (
     AzureAnthropicClient,
     get_azure_client,
+    to_anthropic_parsed_response,
     to_anthropic_response,
 )
+from frugalroute.gate import gate
 from frugalroute.llm import call, cost_usd
+from frugalroute.models import GateVerdict
 
 
 def _oai_response(
@@ -130,6 +133,102 @@ def test_adapter_refusal_through_llm_call() -> None:
     result = call(client, "gpt-5.5", "sys", "user")
     assert result.refused is True
     assert result.text == ""
+
+
+# --- Structured-output (gate) path: parse mapping + dispatch (split 03). ---
+
+
+def _oai_parsed_response(parsed, finish_reason="stop", *, refusal=None, prompt=0, completion=0):
+    usage = SimpleNamespace(
+        prompt_tokens=prompt, completion_tokens=completion, prompt_tokens_details=None
+    )
+    message = SimpleNamespace(content=None, refusal=refusal, parsed=parsed)
+    choice = SimpleNamespace(message=message, finish_reason=finish_reason)
+    return SimpleNamespace(choices=[choice], usage=usage)
+
+
+class _FakeParseCompletions:
+    def __init__(self, response):
+        self._response = response
+        self.calls: list[dict] = []
+
+    def parse(self, **kwargs):
+        self.calls.append(kwargs)
+        return self._response
+
+
+class _FakeParseOpenAI:
+    def __init__(self, response):
+        self.chat = SimpleNamespace(completions=_FakeParseCompletions(response))
+
+
+def test_completions_parse_falls_back_to_beta() -> None:
+    # Older SDKs expose parse only at beta.chat.completions.parse — the dispatch
+    # must fall back when chat.completions has no parse attribute.
+    from frugalroute.azure_client import _completions_parse
+
+    sentinel = object()
+
+    class _BetaCompletions:
+        def parse(self, **kwargs):
+            return sentinel
+
+    # chat.completions has NO parse; beta.chat.completions.parse exists.
+    client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace()),
+        beta=SimpleNamespace(chat=SimpleNamespace(completions=_BetaCompletions())),
+    )
+    assert _completions_parse(client, model="m", messages=[]) is sentinel
+
+
+def test_parsed_completion_exposes_parsed_output() -> None:
+    verdict = GateVerdict(sufficient=True, confidence=0.9, reason="ok")
+    resp = to_anthropic_parsed_response(
+        _oai_parsed_response(verdict, "stop", prompt=80, completion=12)
+    )
+    assert resp.stop_reason == "end_turn"
+    assert resp.parsed_output is verdict
+    assert resp.usage.input_tokens == 80
+
+
+def test_parsed_refusal_maps_to_refusal() -> None:
+    resp = to_anthropic_parsed_response(
+        _oai_parsed_response(None, "stop", refusal="I can't help with that.")
+    )
+    assert resp.stop_reason == "refusal"
+    assert resp.parsed_output is None
+    assert resp.content == []
+
+
+def test_parse_method_sends_response_format_and_returns_parsed() -> None:
+    verdict = GateVerdict(sufficient=False, confidence=0.2, reason="hedged")
+    fake = _FakeParseOpenAI(_oai_parsed_response(verdict, "stop", prompt=60, completion=8))
+    client = AzureAnthropicClient(fake, "gpt-5.5")
+    resp = client.messages.parse(
+        model="claude-haiku-4-5",
+        max_tokens=256,
+        system="sys",
+        messages=[{"role": "user", "content": "u"}],
+        output_format=GateVerdict,
+    )
+    sent = fake.chat.completions.calls[-1]
+    assert sent["model"] == "gpt-5.5"
+    assert sent["max_completion_tokens"] == 256
+    assert "max_tokens" not in sent
+    assert sent["response_format"] is GateVerdict
+    assert resp.parsed_output is verdict
+
+
+def test_gate_runs_through_adapter() -> None:
+    # The gate works unchanged against the adapter, pricing gpt-5.5 (no network).
+    verdict = GateVerdict(sufficient=True, confidence=0.88, reason="committed")
+    fake = _FakeParseOpenAI(_oai_parsed_response(verdict, "stop", prompt=120, completion=10))
+    client = AzureAnthropicClient(fake, "gpt-5.5")
+    outcome = gate(client, "Q?", "The answer is 7.", gate_model="gpt-5.5")
+    assert outcome.refused is False
+    assert outcome.verdict.sufficient is True
+    assert outcome.verdict.confidence == pytest.approx(0.88)
+    assert outcome.cost_usd == pytest.approx(cost_usd("gpt-5.5", 120, 10), abs=1e-12)
 
 
 def test_get_azure_client_missing_config_raises(monkeypatch) -> None:
