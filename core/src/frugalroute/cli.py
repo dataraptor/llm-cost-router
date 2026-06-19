@@ -1,14 +1,17 @@
 """Command-line interface: ``python -m frugalroute.cli`` (build-spec §13).
 
-Split 03 ships the ``route`` subcommand (cascade strategy). ``train`` (split 04)
-and ``eval`` (split 05) are added later behind the same argparse parser — the
-subparser registration leaves a clean extension point.
+Subcommands:
+  * ``route`` (split 03) — route one query via the cascade, or (split 04) via a
+    trained predictive router.
+  * ``train`` (split 04) — generate labels (@api), embed, fit a classifier, and
+    save a :class:`~frugalroute.classifier.PredictiveRouter`.
+  * ``eval`` (split 05) extends the same parser later.
 
-The CLI is a thin presentation layer over :func:`frugalroute.router.route`: it
-resolves an example or a raw query, runs the route, and prints either a
-human-readable summary or round-trippable JSON. Operational failures (missing
-key, an unimplemented strategy) surface as a clear one-line message and a
-non-zero exit code — never a raw traceback.
+The CLI is a thin presentation layer over :func:`frugalroute.router.route` and the
+classifier helpers. Operational failures (missing key, a missing router/model,
+a bad example/benchmark) surface as a clear one-line message and a non-zero exit
+code — never a raw traceback. ``client`` and ``embedder`` are injectable test
+seams (default: live backend / local embedder).
 """
 
 from __future__ import annotations
@@ -16,13 +19,25 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections import Counter
 from dataclasses import asdict
 from typing import Any
 
+from frugalroute.benchmarks import frozen_split, load_benchmark
+from frugalroute.classifier import (
+    DEFAULT_EMBEDDER,
+    PredictiveRouter,
+    generate_labels,
+    load_router,
+    save_router,
+)
+from frugalroute.classifier import train as train_classifier
+from frugalroute.embed import embed
 from frugalroute.examples import load_examples
-from frugalroute.llm import cheap_tier, strong_tier
+from frugalroute.llm import DEFAULT_TIERS, cheap_tier, get_client, strong_tier
 from frugalroute.models import RouteResult
-from frugalroute.router import route
+from frugalroute.prompts import PROMPT_VERSION
+from frugalroute.router import CASCADE, PREDICTIVE, route
 
 # Friendly short names for the cost-breakdown line, keyed by model ID.
 _SHORT_NAMES: dict[str, str] = {
@@ -46,12 +61,14 @@ def route_result_to_dict(result: RouteResult) -> dict[str, Any]:
 
 
 def _cost_breakdown(result: RouteResult) -> str:
-    """One-line cost breakdown, e.g. ``Haiku + gate`` or ``Haiku + gate + Opus``.
+    """One-line cost breakdown of the calls actually made.
 
-    The cheap call always ran; ``gate`` ran iff a verdict is present; the strong
-    tier ran iff the route escalated (a cheap refusal escalates with no gate).
-    Labels come from the default tier config, which is what the CLI routes with.
+    Cascade: ``Haiku``, ``Haiku + gate``, ``Haiku + gate + Opus`` (or ``Haiku +
+    Opus`` on a cheap refusal that skipped the gate). Predictive: just the single
+    tier that ran (no cheap call, no gate).
     """
+    if result.strategy == PREDICTIVE:
+        return _short(result.tier_used)
     parts: list[str] = [_short(cheap_tier())]
     if result.gate is not None:
         parts.append("gate")
@@ -60,13 +77,18 @@ def _cost_breakdown(result: RouteResult) -> str:
     return " + ".join(parts)
 
 
-def _print_human(result: RouteResult) -> None:
-    """Print the human-readable route summary."""
+def _print_human(result: RouteResult, *, theta: float | None = None) -> None:
+    """Print the human-readable route summary (branching on strategy)."""
     print(f"Query:     {result.query}")
     print(f"Strategy:  {result.strategy}")
     print(f"Tier used: {result.tier_used}")
     print(f"Escalated: {'yes' if result.escalated else 'no'}")
-    if result.gate is not None:
+    if result.strategy == PREDICTIVE:
+        threshold = 0.5 if theta is None else theta
+        margin = result.p_strong if result.p_strong is not None else float("nan")
+        decision = "strong" if result.tier_used == strong_tier() else "cheap"
+        print(f"Decision:  p_strong={margin:.2f} vs theta={threshold:.2f} -> {decision}")
+    elif result.gate is not None:
         g = result.gate
         print(f"Gate:      sufficient={g.sufficient} confidence={g.confidence:.2f} - {g.reason}")
     else:
@@ -94,7 +116,7 @@ def _resolve_query(args: argparse.Namespace) -> tuple[str, str]:
     return args.query, args.benchmark
 
 
-def _run_route(args: argparse.Namespace, client: Any) -> int:
+def _run_route(args: argparse.Namespace, client: Any, embedder: Any) -> int:
     """Execute the ``route`` subcommand. Returns a process exit code."""
     try:
         query, benchmark = _resolve_query(args)
@@ -102,15 +124,33 @@ def _run_route(args: argparse.Namespace, client: Any) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
+    router: PredictiveRouter | None = None
+    if args.strategy == PREDICTIVE:
+        if not args.model:
+            print(
+                "error: --strategy predictive requires --model PATH (a trained router).",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            router = load_router(args.model)
+        except (FileNotFoundError, TypeError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+
     try:
         result = route(
             query,
             strategy=args.strategy,
             benchmark=benchmark,
             tau=args.tau,
+            theta=args.theta,
             client=client,
+            router=router,
+            embedder=embedder,
         )
-    except NotImplementedError as exc:
+    except ValueError as exc:
+        # Bad strategy / missing router / degenerate prediction — user error.
         print(f"error: {exc}", file=sys.stderr)
         return 2
     except RuntimeError as exc:
@@ -121,24 +161,73 @@ def _run_route(args: argparse.Namespace, client: Any) -> int:
     if args.json:
         print(json.dumps(route_result_to_dict(result), indent=2))
     else:
-        _print_human(result)
+        _print_human(result, theta=args.theta)
+    return 0
+
+
+def _run_train(args: argparse.Namespace, client: Any, embedder: Any) -> int:
+    """Execute the ``train`` subcommand (@api + local embedder). Exit code."""
+    try:
+        items = load_benchmark(args.benchmark, n=args.n)
+    except (ValueError, FileNotFoundError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    # Train only on the calibration side of the frozen split (leakage-free: the
+    # test side is held out for the eval in split 05).
+    calibration, _test = frozen_split(items)
+    if not calibration:
+        print("error: no calibration items to train on (benchmark too small).", file=sys.stderr)
+        return 2
+
+    tiers = list(DEFAULT_TIERS)
+    if client is None:
+        try:
+            client = get_client()
+        except RuntimeError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+
+    label_runs = generate_labels(client, calibration, tiers, args.benchmark)
+    labels = [run.label for run in label_runs]
+    embeddings = embed([item.question for item in calibration], embedder=embedder)
+    clf = train_classifier(embeddings, labels, tiers, kind=args.kind)
+    run_ids = sorted({run.run_id for run in label_runs})
+    router = PredictiveRouter(
+        clf=clf,
+        tiers=tiers,
+        embedder_name=DEFAULT_EMBEDDER,
+        prompt_version=PROMPT_VERSION,
+        label_run_ids=run_ids,
+    )
+
+    out = args.out or f"models/{args.benchmark}.joblib"
+    save_router(router, out)
+
+    distribution = Counter(labels)
+    dist_str = " ".join(f"{tier}={distribution.get(tier, 0)}" for tier in tiers)
+    print(f"Trained predictive router on {len(calibration)} {args.benchmark} items.")
+    print(f"Classifier: {router.clf_kind}")
+    print(f"Label distribution: {dist_str}")
+    print(f"Label runs: {', '.join(run_ids)}")
+    print(f"Saved router to {out}")
     return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the argparse parser. ``route`` is the only subcommand in split 03."""
+    """Build the argparse parser (``route`` + ``train``; ``eval`` added in split 05)."""
     parser = argparse.ArgumentParser(
         prog="frugalroute",
-        description="FrugalRoute — route a query through the cost-optimizing cascade.",
+        description="FrugalRoute - route a query through the cost-optimizing router.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    route_p = sub.add_parser("route", help="Route a single query (cascade strategy).")
+    route_p = sub.add_parser("route", help="Route a single query (cascade or predictive).")
     route_p.add_argument(
         "--strategy",
-        choices=["cascade", "predictive"],
-        default="cascade",
-        help="Routing strategy (default: cascade; predictive arrives in split 04).",
+        choices=[CASCADE, PREDICTIVE],
+        default=CASCADE,
+        help="Routing strategy (default: cascade).",
     )
     target = route_p.add_mutually_exclusive_group(required=True)
     target.add_argument("--example", help="Run a bundled example by id (e.g. gsm8k-1142).")
@@ -152,12 +241,36 @@ def build_parser() -> argparse.ArgumentParser:
     route_p.add_argument(
         "--tau", type=float, default=0.8, help="Cascade acceptance threshold tau (0..1)."
     )
+    route_p.add_argument(
+        "--theta",
+        type=float,
+        default=None,
+        help="Predictive decision threshold theta (route to strong iff p_strong > theta).",
+    )
+    route_p.add_argument(
+        "--model", help="Path to a trained predictive router (required for --strategy predictive)."
+    )
     route_p.add_argument("--json", action="store_true", help="Emit the RouteResult as JSON.")
+
+    train_p = sub.add_parser("train", help="Train and save a predictive router (needs a key).")
+    train_p.add_argument(
+        "--benchmark", choices=["gsm8k", "mmlu"], required=True, help="Benchmark to train on."
+    )
+    train_p.add_argument("--n", type=int, default=None, help="Cap the number of items loaded.")
+    train_p.add_argument(
+        "--kind",
+        choices=["logreg", "knn"],
+        default="logreg",
+        help="Classifier kind (default: logreg; knn is the §19-E fallback).",
+    )
+    train_p.add_argument(
+        "--out", help="Output path for the router (default: models/<benchmark>.joblib)."
+    )
     return parser
 
 
-def main(argv: list[str] | None = None, *, client: Any = None) -> int:
-    """CLI entry point. ``client`` is an injectable test seam (default: live).
+def main(argv: list[str] | None = None, *, client: Any = None, embedder: Any = None) -> int:
+    """CLI entry point. ``client`` and ``embedder`` are injectable test seams.
 
     Returns a process exit code (0 on success). When invoked as a console script
     or ``python -m frugalroute.cli``, the return value is passed to ``sys.exit``.
@@ -165,7 +278,9 @@ def main(argv: list[str] | None = None, *, client: Any = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.command == "route":
-        return _run_route(args, client)
+        return _run_route(args, client, embedder)
+    if args.command == "train":
+        return _run_train(args, client, embedder)
     parser.error(f"unknown command {args.command!r}")  # pragma: no cover - argparse guards
     return 2  # pragma: no cover
 

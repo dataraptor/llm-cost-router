@@ -17,7 +17,19 @@ from frugalroute.benchmarks import (
     grade_mmlu,
     load_benchmark,
 )
+from frugalroute.classifier import (
+    DEFAULT_EMBEDDER,
+    LabelRun,
+    PredictiveRouter,
+    Router,
+    generate_labels,
+    label_cheapest_correct,
+    load_router,
+    save_router,
+    train,
+)
 from frugalroute.economics import break_even_acceptance, cascade_saves, mean_cascade_cost
+from frugalroute.embed import embed, get_embedder
 from frugalroute.examples import load_examples
 from frugalroute.gate import GateOutcome, gate
 from frugalroute.generate import generate
@@ -27,6 +39,7 @@ from frugalroute.prompts import PROMPT_VERSION
 from frugalroute.router import route
 
 __all__ = [
+    "DEFAULT_EMBEDDER",
     "DEFAULT_TIERS",
     "PRICING",
     "PROMPT_VERSION",
@@ -35,20 +48,30 @@ __all__ = [
     "FrontierPoint",
     "GateOutcome",
     "GateVerdict",
+    "LabelRun",
+    "PredictiveRouter",
     "RouteResult",
+    "Router",
     "break_even_acceptance",
     "cascade_saves",
     "cost_usd",
+    "embed",
     "extract_gsm8k_answer",
     "extract_mmlu_answer",
     "frozen_split",
     "gate",
     "generate",
+    "generate_labels",
+    "get_embedder",
     "grade",
     "grade_gsm8k",
     "grade_mmlu",
+    "label_cheapest_correct",
     "load_benchmark",
     "load_examples",
+    "load_router",
     "mean_cascade_cost",
     "route",
+    "save_router",
+    "train",
 ]

@@ -12,6 +12,12 @@ license = { text = "MIT" }
 dependencies = [
     "anthropic>=0.40,<2",
     "pydantic>=2,<3",
+    # Split 04 — predictive router. numpy/scikit-learn/joblib are light enough to
+    # import eagerly (no key, no network); the heavy embedder (torch via
+    # sentence-transformers) is the optional ``embed`` extra below, imported lazily.
+    "numpy>=1.26,<3",
+    "scikit-learn>=1.3,<2",
+    "joblib>=1.3,<2",
 ]
 
 [project.scripts]
@@ -23,6 +29,12 @@ frugalroute = "frugalroute.cli:main"
 # Anthropic-shaped adapter in frugalroute.azure_client (imported lazily).
 azure = [
     "openai>=1.30,<2",
+]
+# Local-embedding backend for the predictive router (split 04). Heavy (pulls
+# torch); imported lazily inside ``frugalroute.embed.get_embedder`` so the no-key
+# unit path and ``import frugalroute`` never load it.
+embed = [
+    "sentence-transformers>=2.2,<4",
 ]
 dev = [
     "pytest>=8",
@@ -53,6 +65,12 @@ plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
 module = "anthropic.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Untyped ML deps (split 04): sklearn/joblib ship no stubs; sentence-transformers
+# is an optional, lazily-imported extra. numpy is typed and intentionally not here.
+module = ["sklearn.*", "joblib.*", "sentence_transformers.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

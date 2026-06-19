@@ -18,19 +18,24 @@ cascade costs *more* than always-strong (``c_cheap + c_gate + c_strong >
 c_strong``) — the losing region of build-spec §8. Refusals never crash the path
 (cheap→escalate, gate→escalate, strong→surface honestly).
 
-**Strategy B — Predictive** arrives in split 04 (stubbed to ``NotImplementedError``).
+**Strategy B — Predictive** (split 04): embed the query with a local model, let a
+small classifier pick the cheapest sufficient tier, and generate with **only** that
+tier — exactly one model call, no cheap-then-strong double spend and no gate.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from frugalroute.gate import gate
 from frugalroute.generate import generate
 from frugalroute.llm import DEFAULT_TIERS, cheap_tier, get_client, strong_tier
 from frugalroute.models import GateVerdict, RouteResult
 from frugalroute.prompts import PROMPT_VERSION
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from frugalroute.classifier import PredictiveRouter
 
 CASCADE = "cascade"
 PREDICTIVE = "predictive"
@@ -45,21 +50,25 @@ def route(
     theta: float | None = None,
     client: Any = None,
     tiers: Sequence[str] = DEFAULT_TIERS,
+    router: PredictiveRouter | None = None,
+    embedder: Any = None,
 ) -> RouteResult:
     """Route ``query`` with the chosen strategy and return a ``RouteResult``.
 
     ``client`` defaults to :func:`get_client` (resolved lazily, only when actually
-    routing) so importing this module never needs a key. ``cascade`` is
-    implemented here; ``predictive`` raises ``NotImplementedError`` until split 04.
-    Raises ``ValueError`` on an unknown strategy.
+    making an API call) so importing this module never needs a key. ``cascade``
+    runs cheap → gate → escalate; ``predictive`` needs a trained ``router`` (a
+    :class:`~frugalroute.classifier.PredictiveRouter`) and an optional ``embedder``
+    (injectable for tests; defaults to the local model). Raises ``ValueError`` on
+    an unknown strategy or a missing predictive router.
 
-    The strategy is validated **before** the client is resolved, so a bad strategy
-    or the not-yet-implemented predictive path fails fast with a clear message
-    rather than first demanding a key. (Split 04 wires the predictive path to the
-    client once it needs one.)
+    The strategy and predictive prerequisites are validated **before** the client
+    is resolved, so a bad strategy or a missing router fails fast with a clear
+    message rather than first demanding a key. The predictive path also embeds and
+    predicts (both local, no key) before resolving the client for its single call.
     """
     if strategy == PREDICTIVE:
-        return _route_predictive(client, query, benchmark, theta, tiers)
+        return _route_predictive(client, query, benchmark, router, theta, embedder)
     if strategy != CASCADE:
         raise ValueError(f"Unknown strategy {strategy!r}; expected {CASCADE!r} or {PREDICTIVE!r}.")
     if client is None:
@@ -71,12 +80,41 @@ def _route_predictive(
     client: Any,
     query: str,
     benchmark: str,
+    router: PredictiveRouter | None,
     theta: float | None,
-    tiers: Sequence[str],
+    embedder: Any,
 ) -> RouteResult:
-    """Predictive routing (embed → classify → one call) — implemented in split 04."""
-    raise NotImplementedError(
-        "Predictive routing is implemented in split 04; use strategy='cascade' for now."
+    """Predictive routing: embed → classify → exactly ONE generate call.
+
+    No cheap call and no gate — the classifier picks the tier upfront, so the
+    reported cost is that single call's cost only. ``router.predict_tier`` embeds
+    locally (no key) and validates the predicted tier and the embedding, raising a
+    clear error on a degenerate embedding or an out-of-set tier (split-04 R11). A
+    refusal on the single call is surfaced honestly (``refused=True``). ``p_strong``
+    (P needs strong) is recorded for the UI decision margin; ``gate`` is ``None``.
+    """
+    if router is None:
+        raise ValueError(
+            "Predictive routing requires a trained router; pass route(..., router=...) "
+            "(e.g. Router.load(path) / load_router(path))."
+        )
+    tier, p_strong = router.predict_tier(query, theta, embedder=embedder)
+    if client is None:
+        client = get_client()
+    result = generate(client, tier, query, benchmark)
+    return RouteResult(
+        query=query,
+        strategy=PREDICTIVE,
+        tier_used=tier,
+        escalated=(tier == router.tiers[-1]),
+        answer=result.text,
+        correct=None,
+        gate=None,
+        p_strong=p_strong,
+        refused=result.refused,
+        cost_usd=result.cost_usd,
+        latency_s=result.latency_s,
+        prompt_version=PROMPT_VERSION,
     )
 
 

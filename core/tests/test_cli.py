@@ -122,13 +122,15 @@ def test_route_human_output_escalated_breakdown(
 def test_predictive_cli_errors_gracefully(
     scripted_client, fake_response, fake_usage, capsys
 ) -> None:
-    # 18. Predictive strategy → clean message + non-zero exit, not a traceback.
+    # Predictive strategy now needs a trained router (split 04): without --model it
+    # errors with a clean message + non-zero exit, not a traceback. (Full predictive
+    # CLI behaviour is covered in test_cli_predictive.py.)
     client = scripted_client([])
     code = main(["route", "--strategy", "predictive", "--example", "gsm8k-1142"], client=client)
     err = capsys.readouterr().err
     assert code == 2
     assert "error:" in err
-    assert "split 04" in err
+    assert "requires --model" in err
 
 
 def test_unknown_example_errors_gracefully(scripted_client, capsys) -> None:

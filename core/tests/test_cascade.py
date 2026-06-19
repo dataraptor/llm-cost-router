@@ -250,6 +250,8 @@ def test_unknown_strategy_raises(scripted_client) -> None:
         route("Q?", strategy="bogus", client=scripted_client([]))
 
 
-def test_predictive_strategy_not_implemented(scripted_client) -> None:
-    with pytest.raises(NotImplementedError, match="split 04"):
+def test_predictive_without_router_errors(scripted_client) -> None:
+    # Split 04: predictive now needs a trained router; a missing one fails fast
+    # with a clear ValueError (before demanding a key), not NotImplementedError.
+    with pytest.raises(ValueError, match="requires a trained router"):
         route("Q?", strategy="predictive", client=scripted_client([]))
