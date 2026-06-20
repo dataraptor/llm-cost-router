@@ -3,6 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Vendored React/ReactDOM UMD (react@18.3.1) — split 13. Setting window.React/
+     window.ReactDOM *before* support.js runs makes its loadReactUmd() early-return,
+     so production never fetches React from a CDN (offline-render invariant). These
+     are the exact unpkg bundles support.js pinned, so the same SRI hashes verify
+     them (same-origin, no crossorigin needed). -->
+<script src="./vendor/react.production.min.js" integrity="sha384-DGyLxAyjq0f9SPpVevD6IgztCFlnMF6oW/XQGmfe+IsZ8TqEiDrcHkMLKI6fiB/Z"></script>
+<script src="./vendor/react-dom.production.min.js" integrity="sha384-gTGxhz21lVGYNMcdJOyq01Edg0jhn/c22nsx0kyqP0TxaV5WVdsSH1fSDUf5YJj1"></script>
 <script src="./support.js"></script>
 <!-- Publishes the API client + pure formatters on window.FR for the
      dc-runtime logic (which is eval'd and cannot import). See app/src/. -->

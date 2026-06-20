@@ -227,6 +227,75 @@ split, and branch-protection guidance.
 
 ---
 
+## Deploy (Docker Compose)
+
+The whole stack runs from two slim, non-root, pinned images with one command. The
+`app` container serves the static UI **and reverse-proxies `/api`** to the `api`
+container, so the browser talks to a single origin (no CORS). React is **vendored**
+(`app/vendor/`, `react@18.3.1`) and loaded before `support.js`, so the UI renders
+**with outbound network fully blocked** — no CDN dependency at runtime.
+
+```bash
+# Build + start (app on :8080, api internal-only on the compose network)
+docker compose up -d --build
+
+# Open the app
+#   http://localhost:8080/   → Single-Query + the Frontier (Proof) money-demo
+
+# Stop
+docker compose down
+```
+
+- **No key needed for the demo.** With no key set, the **Frontier renders the
+  in-image committed sample**, and a live single query shows the honest
+  *missing-key* card (never a fake answer). `GET /api/health` reports
+  `has_api_key:false`.
+- **Live routing/streaming** turns on when you supply a key **at runtime** (it is
+  never baked into an image layer — proven by `docker history … | grep -i SENTINEL`
+  → `0`). Put it in a root `.env` (auto-read by compose; see
+  [`.env.example`](.env.example)):
+
+  ```dotenv
+  # native Anthropic Haiku/Opus
+  ANTHROPIC_API_KEY=sk-ant-...
+
+  # …or the Azure OpenAI gpt-5.5 adapter backend
+  FRUGALROUTE_BACKEND=azure
+  AZURE_OPENAI_API_KEY=...
+  AZURE_OPENAI_ENDPOINT=https://....openai.azure.com/
+  CHAT_LLM_MODEL=gpt-5.5
+  OPENAI_API_VERSION=2025-01-01-preview
+  ```
+
+- **Port already in use?** Override the published port: `APP_PORT=8099 docker
+  compose up -d`.
+- **Beyond local:** these images run unchanged on a single small VM or any
+  container PaaS (Fly.io, Render, Cloud Run, an ECS/Compose host). Publishing to a
+  registry and a hosted deployment are out of scope for the portfolio demo; the
+  images are the artifact.
+
+### Production lock-down checklist
+
+- [ ] **Key as a secret** — inject `ANTHROPIC_API_KEY` via the platform's secret
+  store / `--env-file`, not a committed `.env`. It is runtime-only by design.
+- [ ] **CORS** — same-origin (the app proxies `/api`) needs **none**; the compose
+  api defaults `FRUGALROUTE_CORS_ORIGINS` to *empty* (locked). If you ever expose
+  the api **directly** to a different origin, set an explicit allow-list
+  (`FRUGALROUTE_CORS_ORIGINS=https://app.example.com`).
+- [ ] **Rate limit** — off by default for local dev; enable + tune in prod
+  (`FRUGALROUTE_RATE_LIMIT_ENABLED=true`, `…_BURST`, `…_REFILL_PER_S`). Distinct
+  from the Anthropic-side 429 (surfaced as a stream `retry` event).
+- [ ] **Concurrency / timeout** — `FRUGALROUTE_MAX_CONCURRENCY` (default 6) and
+  `FRUGALROUTE_REQUEST_TIMEOUT_S` (default 60) bound load; raise/lower per host.
+- [ ] **TLS** — terminate HTTPS at a reverse proxy / platform edge in front of the
+  `app` container.
+
+> **Note:** Google Fonts are the only remaining external resource (the UI degrades
+> gracefully to system fonts when offline); React and Babel are never fetched at
+> runtime. Vendor the fonts too if you need a fully air-gapped UI.
+
+---
+
 ## Provenance
 
 - **Pricing (per MTok, pinned 2026-06-19):** Haiku 4.5 — input **$1.00** / output

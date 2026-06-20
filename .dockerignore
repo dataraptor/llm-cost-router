@@ -1,0 +1,47 @@
+# Build context for api/Dockerfile (context = repo root). Keep it small + secret-free:
+# only core/ and api/ source need to reach the build. Everything below is excluded.
+
+# Secrets — never enter the build context.
+.env
+.env.*
+!.env.example
+
+# VCS / tooling
+.git
+.gitignore
+.github
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.coverage
+**/.mypy_cache
+**/.pytest_cache
+**/.ruff_cache
+**/.coverage
+
+# Python build/runtime cruft
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.egg-info
+**/.venv
+**/venv
+**/build
+**/dist
+
+# Tests aren't needed to install (the wheel only ships src/).
+**/tests
+
+# Layers not part of the api image
+app
+docs
+scripts
+tmp
+eval/runs
+node_modules
+**/node_modules
+
+# Container artifacts themselves
+docker-compose.yml
+**/Dockerfile
+**/.dockerignore

@@ -1,0 +1,15 @@
+# Build context for app/Dockerfile (context = ./app). Only the served static files
+# are needed (index.html, FrugalRoute.dc.html, support.js, src/, vendor/, nginx.conf).
+
+node_modules
+tests
+test-results
+playwright-report
+playwright.config.js
+playwright.integration.config.js
+package.json
+package-lock.json
+README.md
+Dockerfile
+.dockerignore
+**/.DS_Store

@@ -12,9 +12,10 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # --- UI defaults pinned by the contract (split-06 §3). The router's *own* default
 #     tau is 0.8 (build-spec §13); theta defaults to 0.6 here and is resolved
@@ -45,7 +46,10 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="FRUGALROUTE_", extra="ignore")
 
-    cors_origins: list[str] = ["*"]
+    # NoDecode: take the raw env string so ``_split_csv`` (below) parses CSV/empty.
+    # Without it pydantic-settings JSON-pre-parses list fields and a plain CSV
+    # string (or an empty one, as the same-origin container passes) raises.
+    cors_origins: Annotated[list[str], NoDecode] = ["*"]
     api_prefix: str = "/api"
     sample_run_path: Path = _DEFAULT_SAMPLE_PATH
     # Live backend: "azure" injects the gpt-5.5 adapter; anything else uses the

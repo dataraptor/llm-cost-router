@@ -1,0 +1,52 @@
+# FrugalRoute — one-command stack (split 13).
+#
+#   docker compose up -d        # then open http://localhost:8080/
+#
+# `app` serves the static UI and reverse-proxies /api → `api` (same-origin, no
+# CORS). The Frontier renders the committed sample with NO key; live single-query
+# routing/streaming works when a key is supplied at runtime (see .env.example).
+#
+# The key is passed via env / a root .env file — it is NEVER baked into an image
+# layer (proven by `docker history ... | grep -i SENTINEL` == 0).
+
+services:
+  api:
+    build:
+      # Repo root: the api install needs the sibling `core` package.
+      context: .
+      dockerfile: api/Dockerfile
+    image: frugalroute-api
+    environment:
+      # Backend select + secrets — runtime only, default empty so the no-key demo
+      # works out of the box (Frontier renders; single-query shows missing-key).
+      FRUGALROUTE_BACKEND: ${FRUGALROUTE_BACKEND:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      OPENAI_API_VERSION: ${OPENAI_API_VERSION:-}
+      CHAT_LLM_MODEL: ${CHAT_LLM_MODEL:-}
+      # Same-origin in prod: the app proxies, so the API needn't allow any origin.
+      FRUGALROUTE_CORS_ORIGINS: ${FRUGALROUTE_CORS_ORIGINS:-}
+    expose:
+      - "8000"
+    restart: unless-stopped
+    networks:
+      - frugalroute
+
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    image: frugalroute-app
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    restart: unless-stopped
+    networks:
+      - frugalroute
+
+networks:
+  frugalroute:
+    driver: bridge

@@ -1,0 +1,4 @@
+# Vendored React/ReactDOM UMD bundles (split 13) are SRI-pinned: their bytes must
+# never change across clones/checkouts or the integrity hash in FrugalRoute.dc.html
+# fails. Treat them as binary (no EOL/text normalization).
+app/vendor/*.js -text

@@ -13,6 +13,9 @@ dependencies = [
     "fastapi>=0.110,<1",
     "uvicorn[standard]>=0.27,<1",
     "pydantic>=2,<3",
+    # Settings surface (config.py). Pydantic v2 moved BaseSettings into this
+    # package; declared here so a clean install (e.g. the container) has it.
+    "pydantic-settings>=2,<3",
     # The engine, imported in-process (no service-to-service HTTP). Installed as an
     # editable path dep alongside the api: `pip install -e core && pip install -e api`.
     "frugalroute",
