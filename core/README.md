@@ -1,18 +1,18 @@
-# core — the FrugalRoute engine
+# core: the FrugalRoute engine
 
 The standalone engine: a framework-free, installable Python package
-(`frugalroute`). It knows nothing about HTTP, UI, or deployment — `eval`, `api`,
+(`frugalroute`). It knows nothing about HTTP, UI, or deployment; `eval`, `api`,
 and `app` build on top of it. Importing it never requires an API key (the
 Anthropic client is built lazily in `get_client()`).
 
 **Depends on:** nothing else in this repo. This is the bottom of the stack.
 
-## What's here (split 01)
+## What's here
 
-- `models.py` — `GateVerdict` (the only API-sent type) + `RouteResult` /
-  `FrontierPoint` / `EvalReport` contracts (build-spec §7).
-- `prompts.py` — the gate + per-benchmark generation prompts behind `PROMPT_VERSION` (§6).
-- `llm.py` — pinned `PRICING`, the config-driven `DEFAULT_TIERS`, the cache-aware
+- `models.py`: `GateVerdict` (the only API-sent type) plus the `RouteResult`,
+  `FrontierPoint`, and `EvalReport` contracts.
+- `prompts.py`: the gate and per-benchmark generation prompts behind `PROMPT_VERSION`.
+- `llm.py`: pinned `PRICING`, the config-driven `DEFAULT_TIERS`, the cache-aware
   `cost_usd(...)` engine, and a refusal-safe `call(...)` wrapper.
 
 ## Install
