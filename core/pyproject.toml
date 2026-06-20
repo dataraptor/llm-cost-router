@@ -39,7 +39,7 @@ azure = [
 # torch); imported lazily inside ``frugalroute.embed.get_embedder`` so the no-key
 # unit path and ``import frugalroute`` never load it.
 embed = [
-    "sentence-transformers>=2.2,<4",
+    "sentence-transformers>=2.2,<6",
 ]
 dev = [
     "pytest>=8",
