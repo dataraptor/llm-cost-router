@@ -1,5 +1,8 @@
 # app — FrugalRoute web frontend
 
+> Part of **FrugalRoute** — see the [root README](../README.md) for the headline,
+> the proof, and the quickstart.
+
 The user-facing frontend: the high-fidelity **dc-runtime Design Component**
 (`FrugalRoute.dc.html` + `support.js`), wired to the live FrugalRoute API. It
 renders what the backend returns and holds no business logic of its own — every

@@ -1,5 +1,8 @@
 # FrugalRoute API
 
+> Part of **FrugalRoute** — see the [root README](../README.md) for the headline,
+> the proof, and the quickstart.
+
 A **thin FastAPI adapter** over the [`frugalroute`](../core) engine. It validates
 HTTP requests, calls the engine in-process (no service-to-service HTTP for the
 engine, build-spec §4), and serializes the engine's contracts (build-spec §7) to

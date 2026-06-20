@@ -7,9 +7,27 @@
           "operating_param": 0.5,
           "quality": 1.0,
           "quality_spread": 0.0,
-          "cost_usd_per_query": 0.0039375,
-          "cost_spread": 9.644865862208742e-05,
-          "escalation_rate": 0.375,
+          "cost_usd_per_query": 0.0031249999999999997,
+          "cost_spread": 7.654655446197439e-05,
+          "escalation_rate": 0.25,
+          "n": 8
+        },
+        {
+          "operating_param": 0.6,
+          "quality": 1.0,
+          "quality_spread": 0.0,
+          "cost_usd_per_query": 0.0031249999999999997,
+          "cost_spread": 7.654655446197439e-05,
+          "escalation_rate": 0.25,
+          "n": 8
+        },
+        {
+          "operating_param": 0.7,
+          "quality": 1.0,
+          "quality_spread": 0.0,
+          "cost_usd_per_query": 0.0031249999999999997,
+          "cost_spread": 7.654655446197439e-05,
+          "escalation_rate": 0.25,
           "n": 8
         },
         {
@@ -19,6 +37,15 @@
           "cost_usd_per_query": 0.00475,
           "cost_spread": 0.00011635076278220083,
           "escalation_rate": 0.5,
+          "n": 8
+        },
+        {
+          "operating_param": 0.9,
+          "quality": 1.0,
+          "quality_spread": 0.0,
+          "cost_usd_per_query": 0.006375,
+          "cost_spread": 0.00015615497110242727,
+          "escalation_rate": 0.75,
           "n": 8
         },
         {
@@ -33,7 +60,7 @@
       ],
       "baselines": {
         "always_cheap": {
-          "quality": 0.625,
+          "quality": 0.75,
           "quality_spread": 0.0,
           "cost": 0.0009000000000000001,
           "cost_spread": 2.204540768504861e-05
@@ -45,7 +72,7 @@
           "cost_spread": 0.00015921683328090646
         },
         "random": {
-          "quality": 0.75,
+          "quality": 0.875,
           "quality_spread": 0.0,
           "cost": 0.0036999999999999997,
           "cost_spread": 9.063112048297758e-05
@@ -54,11 +81,11 @@
       "oracle": {
         "quality": 1.0,
         "quality_spread": 0.0,
-        "cost": 0.0029999999999999996
+        "cost": 0.0023
       },
       "retention_at_target": 1.0,
       "retention_at_target_spread": 0.0,
-      "cost_reduction_at_target": 0.39423076923076916,
+      "cost_reduction_at_target": 0.5192307692307693,
       "cost_reduction_at_target_spread": 5.233641528945917e-17,
       "n_refused": 0,
       "prompt_version": "v1",
@@ -72,27 +99,54 @@
       "strategy": "predictive",
       "points": [
         {
-          "operating_param": 0.4,
+          "operating_param": 0.3,
           "quality": 1.0,
           "quality_spread": 0.0,
-          "cost_usd_per_query": 0.0036999999999999997,
-          "cost_spread": 9.063112048297758e-05,
-          "escalation_rate": 0.5,
+          "cost_usd_per_query": 0.0044,
+          "cost_spread": 0.00010777754868245962,
+          "escalation_rate": 0.625,
           "n": 8
         },
         {
-          "operating_param": 0.6,
+          "operating_param": 0.4,
           "quality": 1.0,
           "quality_spread": 0.0,
           "cost_usd_per_query": 0.0029999999999999996,
           "cost_spread": 7.348469228349536e-05,
           "escalation_rate": 0.375,
           "n": 8
+        },
+        {
+          "operating_param": 0.5,
+          "quality": 1.0,
+          "quality_spread": 0.0,
+          "cost_usd_per_query": 0.0023,
+          "cost_spread": 5.6338264084013136e-05,
+          "escalation_rate": 0.25,
+          "n": 8
+        },
+        {
+          "operating_param": 0.6,
+          "quality": 1.0,
+          "quality_spread": 0.0,
+          "cost_usd_per_query": 0.0023,
+          "cost_spread": 5.6338264084013136e-05,
+          "escalation_rate": 0.25,
+          "n": 8
+        },
+        {
+          "operating_param": 0.7,
+          "quality": 1.0,
+          "quality_spread": 0.0,
+          "cost_usd_per_query": 0.0023,
+          "cost_spread": 5.6338264084013136e-05,
+          "escalation_rate": 0.25,
+          "n": 8
         }
       ],
       "baselines": {
         "always_cheap": {
-          "quality": 0.625,
+          "quality": 0.75,
           "quality_spread": 0.0,
           "cost": 0.0009000000000000001,
           "cost_spread": 2.204540768504861e-05
@@ -104,7 +158,7 @@
           "cost_spread": 0.00015921683328090646
         },
         "random": {
-          "quality": 0.75,
+          "quality": 0.875,
           "quality_spread": 0.0,
           "cost": 0.0036999999999999997,
           "cost_spread": 9.063112048297758e-05
@@ -113,12 +167,12 @@
       "oracle": {
         "quality": 1.0,
         "quality_spread": 0.0,
-        "cost": 0.0029999999999999996
+        "cost": 0.0023
       },
       "retention_at_target": 1.0,
       "retention_at_target_spread": 0.0,
-      "cost_reduction_at_target": 0.5384615384615385,
-      "cost_reduction_at_target_spread": 5.233641528945917e-17,
+      "cost_reduction_at_target": 0.6461538461538461,
+      "cost_reduction_at_target_spread": 0.0,
       "n_refused": 0,
       "prompt_version": "v1",
       "model_tiers": [
@@ -134,5 +188,7 @@
     "n_calibration": 32,
     "small_n": true
   },
-  "generated_at": "2026-06-20T00:00:00+00:00"
+  "generated_at": "2026-06-20T00:00:00+00:00",
+  "run_id": "run-5394cc79a9c0",
+  "prompt_version": "v1"
 }
