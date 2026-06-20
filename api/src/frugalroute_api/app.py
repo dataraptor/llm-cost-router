@@ -8,32 +8,61 @@ attribute access at call time so tests can monkeypatch them without a network.
 
 from __future__ import annotations
 
+import asyncio
 import datetime as _dt
 import json
 import os
-from collections.abc import Iterator
-from typing import Any, Literal
+import threading
+from collections.abc import Callable, Iterator
+from typing import Any, Literal, TypeVar
 
 import frugalroute
-from fastapi import Depends, FastAPI, Query
+from fastapi import Depends, FastAPI, Query, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, StreamingResponse
 from frugalroute import llm
+from frugalroute.config import load_config
 from frugalroute.harness import (
     QUICK_TAUS,
     QUICK_THETAS,
     report_from_dict,
     report_to_dict,
 )
-from frugalroute.models import route_result_from_dict
+from frugalroute.models import RouteResult, route_result_from_dict
+from frugalroute.obs import configure_logging
 from frugalroute.prompts import PROMPT_VERSION
 from pydantic import ValidationError
 
 from frugalroute_api import config as cfg
 from frugalroute_api import errors, schemas
 from frugalroute_api.config import Settings, get_settings
+from frugalroute_api.metrics import Metrics
+from frugalroute_api.middleware import HardeningMiddleware
+from frugalroute_api.ratelimit import RateLimiter
 
 __version__ = "0.1.0"
+
+_T = TypeVar("_T")
+
+
+async def _run_with_timeout(fn: Callable[[], _T], timeout_s: float) -> _T:
+    """Run a blocking engine call in the threadpool, bounded by ``timeout_s``.
+
+    On timeout the client gets a typed 504 immediately (never a hung connection);
+    the abandoned worker finishes in the background. A timeout of 0/None disables
+    the bound (used only if explicitly configured non-positive — config validates
+    against that, so in practice the bound is always active).
+    """
+    if timeout_s and timeout_s > 0:
+        try:
+            return await asyncio.wait_for(run_in_threadpool(fn), timeout=timeout_s)
+        except (TimeoutError, asyncio.TimeoutError) as exc:  # noqa: UP041 - explicit for clarity
+            raise errors.timeout(
+                "The request exceeded the server time limit. Try again, or use a smaller input.",
+                detail=f"timeout after {timeout_s}s",
+            ) from exc
+    return await run_in_threadpool(fn)
 
 
 # ----------------------------------------------------------------------------
@@ -71,21 +100,44 @@ def _load_router_or_none(settings: Settings) -> Any:
 # ----------------------------------------------------------------------------
 # App factory
 # ----------------------------------------------------------------------------
-def create_app() -> FastAPI:
-    settings = get_settings()
+def create_app(settings: Settings | None = None) -> FastAPI:
+    settings = settings if settings is not None else get_settings()
     app = FastAPI(
         title="FrugalRoute API",
         version=__version__,
         description="Thin HTTP adapter over the FrugalRoute cost-optimizing router engine.",
     )
+
+    # --- Hardening setup (split-11): structured logging + per-app runtime state ---
+    engine_cfg = load_config()  # validates FRUGALROUTE_* at startup, fails loudly
+    configure_logging(engine_cfg.log_level)
+    app.state.metrics = Metrics()
+    # Back-pressure semaphore bounding concurrent in-flight engine requests.
+    app.state.concurrency = threading.BoundedSemaphore(engine_cfg.max_concurrency)
+    app.state.timeout_s = engine_cfg.request_timeout_s
+    app.state.limiter = (
+        RateLimiter(
+            capacity=settings.rate_limit_burst,
+            refill_per_s=settings.rate_limit_refill_per_s,
+        )
+        if settings.rate_limit_enabled
+        else None
+    )
+
+    prefix = settings.api_prefix
+    # Order: add CORS first (inner), then Hardening (outermost) so request-id,
+    # rate-limit and access logging wrap every request including CORS handling.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(
+        HardeningMiddleware,
+        engine_endpoints={("POST", f"{prefix}/route"), ("POST", f"{prefix}/eval")},
+    )
     errors.register_handlers(app)
-    prefix = settings.api_prefix
 
     # --- Health ---------------------------------------------------------------
     @app.get(f"{prefix}/health", response_model=schemas.HealthResponse, tags=["meta"])
@@ -93,6 +145,20 @@ def create_app() -> FastAPI:
         return schemas.HealthResponse(
             status="ok", version=__version__, has_api_key=has_backend_key(settings)
         )
+
+    # --- Metrics (process-lifetime counters; reset on restart) ----------------
+    @app.get(f"{prefix}/metrics", tags=["meta"])
+    def get_metrics(request: Request) -> dict[str, Any]:
+        snap: Any = request.app.state.metrics.snapshot()
+        return {
+            "requests_total": snap.requests_total,
+            "cost_usd_total": snap.cost_usd_total,
+            "escalation_rate": snap.escalation_rate,
+            "refused_total": snap.refused_total,
+            "latency_p50_s": snap.latency_p50_s,
+            "latency_p95_s": snap.latency_p95_s,
+            "since": snap.since,
+        }
 
     # --- Config (sourced from core; no duplicated numbers) --------------------
     @app.get(f"{prefix}/config", response_model=schemas.ConfigResponse, tags=["meta"])
@@ -129,16 +195,19 @@ def create_app() -> FastAPI:
 
     # --- Route (live single query) -------------------------------------------
     @app.post(f"{prefix}/route", response_model=schemas.RouteResponse, tags=["route"])
-    def post_route(
-        req: schemas.RouteRequest, settings: Settings = Depends(get_settings)
+    async def post_route(
+        req: schemas.RouteRequest,
+        request: Request,
+        settings: Settings = Depends(get_settings),
     ) -> schemas.RouteResponse:
         query, benchmark = _resolve_query(req)
         tau_used = req.tau if req.tau is not None else cfg.DEFAULT_TAU
         theta_used = req.theta if req.theta is not None else cfg.DEFAULT_THETA
-        try:
+
+        def _do() -> RouteResult:
             client = resolve_client(settings)
             router = _load_router_or_none(settings) if req.strategy == "predictive" else None
-            result = frugalroute.route(
+            return frugalroute.route(
                 query,
                 strategy=req.strategy,
                 benchmark=benchmark,
@@ -147,10 +216,14 @@ def create_app() -> FastAPI:
                 client=client,
                 router=router,
             )
+
+        try:
+            result = await _run_with_timeout(_do, request.app.state.timeout_s)
         except errors.APIError:
             raise
         except Exception as exc:  # noqa: BLE001 - mapped to a typed structured error
             raise errors.translate_engine_error(exc) from exc
+        _record_route(request, result)
         return schemas.route_response(
             result,
             theta_used=theta_used,
@@ -164,8 +237,10 @@ def create_app() -> FastAPI:
 
     # --- Eval: live quick eval (bounded, synchronous) ------------------------
     @app.post(f"{prefix}/eval", tags=["eval"])
-    def post_eval(
-        req: schemas.EvalRequest, settings: Settings = Depends(get_settings)
+    async def post_eval(
+        req: schemas.EvalRequest,
+        request: Request,
+        settings: Settings = Depends(get_settings),
     ) -> dict[str, Any]:
         if not req.quick:
             raise errors.bad_request(
@@ -175,9 +250,10 @@ def create_app() -> FastAPI:
         repeats = req.repeats if req.repeats is not None else 1
         taus = req.grid if req.grid is not None else QUICK_TAUS
         thetas = req.grid if req.grid is not None else QUICK_THETAS
-        try:
+
+        def _do() -> Any:
             client = resolve_client(settings)
-            run = frugalroute.run_eval(
+            return frugalroute.run_eval(
                 req.benchmark,
                 strategy=req.strategy,
                 repeats=repeats,
@@ -185,6 +261,9 @@ def create_app() -> FastAPI:
                 thetas=thetas,
                 client=client,
             )
+
+        try:
+            run = await _run_with_timeout(_do, request.app.state.timeout_s)
         except errors.APIError:
             raise
         except Exception as exc:  # noqa: BLE001 - mapped to a typed structured error
@@ -202,6 +281,7 @@ def create_app() -> FastAPI:
     # --- Route (live single query, streamed as SSE) --------------------------
     @app.get(f"{prefix}/route/stream", tags=["route"])
     def route_stream(
+        request: Request,
         strategy: Literal["cascade", "predictive"] = Query("cascade"),
         query: str | None = Query(default=None, max_length=schemas.MAX_QUERY_CHARS),
         example_id: str | None = Query(default=None),
@@ -249,6 +329,7 @@ def create_app() -> FastAPI:
                         # serialized RouteResult so the terminal `done` body is
                         # byte-identical to POST /api/route for the same inputs.
                         result = route_result_from_dict(event.data)
+                        _record_route(request, result)
                         payload = schemas.route_response(
                             result, theta_used=theta_used, always_strong_usd=always_strong_usd
                         ).model_dump()
@@ -323,6 +404,18 @@ def _load_sample_bundle(settings: Settings) -> dict[str, Any]:
         "frozen_split": bundle.get("frozen_split"),
         "generated_at": bundle.get("generated_at"),
     }
+
+
+def _record_route(request: Request, result: RouteResult) -> None:
+    """Feed one completed route into the app's metrics accumulator (split-11)."""
+    metrics: Metrics | None = getattr(request.app.state, "metrics", None)
+    if metrics is not None:
+        metrics.record_route(
+            cost_usd=result.cost_usd,
+            latency_s=result.latency_s,
+            escalated=result.escalated,
+            refused=result.refused,
+        )
 
 
 def _sse_frame(event_type: str, data: dict[str, Any]) -> str:

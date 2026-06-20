@@ -42,6 +42,7 @@ from frugalroute.gate import gate
 from frugalroute.generate import generate
 from frugalroute.llm import DEFAULT_TIERS, cheap_tier, get_client, strong_tier
 from frugalroute.models import GateVerdict, RouteResult, route_result_to_dict
+from frugalroute.obs import get_logger
 from frugalroute.prompts import PROMPT_VERSION
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -105,6 +106,18 @@ def route(
         result = stop.value
     if result is None:  # pragma: no cover - the generator always returns a result
         raise RuntimeError("route_events() did not produce a result")
+    # Structured per-route log at the edge (the money quantities the demo claims).
+    get_logger().info(
+        "route",
+        extra={
+            "strategy": result.strategy,
+            "tier_used": result.tier_used,
+            "escalated": result.escalated,
+            "refused": result.refused,
+            "cost_usd": result.cost_usd,
+            "latency_s": result.latency_s,
+        },
+    )
     return result
 
 

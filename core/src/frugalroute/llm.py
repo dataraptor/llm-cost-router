@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
+from frugalroute.obs import concurrency_guard, get_logger
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     import anthropic
 
@@ -171,21 +173,24 @@ def call(
     messages = [{"role": "user", "content": user}]
 
     start = time.monotonic()
-    if parse_model is not None:
-        response = client.messages.parse(
-            model=model_id,
-            max_tokens=max_tokens,
-            system=system,
-            messages=messages,
-            output_format=parse_model,
-        )
-    else:
-        response = client.messages.create(
-            model=model_id,
-            max_tokens=max_tokens,
-            system=system,
-            messages=messages,
-        )
+    # The bounded guard caps simultaneous Anthropic calls process-wide; the call
+    # itself stays sequential within a request (build-spec §17, split-11 §2).
+    with concurrency_guard():
+        if parse_model is not None:
+            response = client.messages.parse(
+                model=model_id,
+                max_tokens=max_tokens,
+                system=system,
+                messages=messages,
+                output_format=parse_model,
+            )
+        else:
+            response = client.messages.create(
+                model=model_id,
+                max_tokens=max_tokens,
+                system=system,
+                messages=messages,
+            )
     latency_s = time.monotonic() - start
 
     usage = _usage_to_dict(response.usage)
@@ -198,6 +203,18 @@ def call(
     )
 
     stop_reason = str(response.stop_reason or "")
+    refused = stop_reason == "refusal"
+    # Structured per-call log at the edge (no secret: only model/tokens/cost/etc.).
+    get_logger().info(
+        "llm_call",
+        extra={
+            "model": model_id,
+            "cost_usd": cost,
+            "latency_s": latency_s,
+            "tokens": usage,
+            "refused": refused,
+        },
+    )
     if stop_reason == "refusal":
         # Refusal: do NOT read response.content. Discard any partial content.
         return CallResult(

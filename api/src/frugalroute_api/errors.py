@@ -22,13 +22,15 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-# The closed set of error types the contract exposes (split-06 §2).
+# The closed set of error types the contract exposes (split-06 §2, split-11 §2).
 ErrorType = str  # one of the literals below; kept as str for JSON simplicity.
 MISSING_KEY = "missing-key"
 API_ERROR = "api-error"
 BAD_REQUEST = "bad-request"
 NOT_FOUND = "not-found"
 BATCH_PENDING = "batch-pending"
+BUSY = "busy"  # over the concurrency cap → 503 + Retry-After (split-11)
+RATE_LIMITED = "rate-limited"  # per-IP token bucket exhausted → 429 + Retry-After
 
 
 class ErrorBody(BaseModel):
@@ -53,19 +55,28 @@ class APIError(Exception):
     """
 
     def __init__(
-        self, status_code: int, error_type: str, message: str, detail: str | None = None
+        self,
+        status_code: int,
+        error_type: str,
+        message: str,
+        detail: str | None = None,
+        *,
+        headers: dict[str, str] | None = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.error_type = error_type
         self.message = message
         self.detail = detail
+        self.headers = headers
 
     def to_response(self) -> JSONResponse:
         body = ErrorResponse(
             error=ErrorBody(type=self.error_type, message=self.message, detail=self.detail)
         )
-        return JSONResponse(status_code=self.status_code, content=body.model_dump())
+        return JSONResponse(
+            status_code=self.status_code, content=body.model_dump(), headers=self.headers
+        )
 
 
 # --- Constructors for the typed errors (status codes pinned per split-06 §2). ---
@@ -85,6 +96,21 @@ def bad_request(message: str, detail: str | None = None, *, status_code: int = 4
 
 def not_found(message: str, detail: str | None = None) -> APIError:
     return APIError(404, NOT_FOUND, message, detail)
+
+
+def busy(message: str, *, retry_after: int = 1, detail: str | None = None) -> APIError:
+    """503: the service is over its concurrency cap; shed load with ``Retry-After``."""
+    return APIError(503, BUSY, message, detail, headers={"Retry-After": str(retry_after)})
+
+
+def rate_limited(message: str, *, retry_after: int = 1, detail: str | None = None) -> APIError:
+    """429: the caller exceeded its per-IP rate limit; ``Retry-After`` seconds to wait."""
+    return APIError(429, RATE_LIMITED, message, detail, headers={"Retry-After": str(retry_after)})
+
+
+def timeout(message: str, detail: str | None = None) -> APIError:
+    """504: the engine exceeded the per-request timeout (typed ``api-error``, §11)."""
+    return APIError(504, API_ERROR, message, detail)
 
 
 def translate_engine_error(exc: Exception) -> APIError:

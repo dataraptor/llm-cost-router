@@ -138,6 +138,40 @@ one shows the cliff.
 
 ---
 
+## Configuration
+
+All settings are env-driven with safe defaults; copy [`.env.example`](.env.example) to
+`.env` (gitignored). Nothing is required for the no-key tests or the precomputed
+Frontier proof — only **live routing** needs a backend key. The engine validates its
+operational config at startup, so an invalid value fails loudly instead of degrading
+silently.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `ANTHROPIC_API_KEY` | — | Native backend key. Read only from env; **never logged or serialized** (redacted everywhere). |
+| `FRUGALROUTE_BACKEND` | *(native)* | `azure` injects the gpt-5.5 adapter; empty uses the native Anthropic client. |
+| `FRUGALROUTE_MAX_CONCURRENCY` | `6` | Max simultaneous Anthropic calls process-wide; also sizes API back-pressure. Must be ≥ 1. |
+| `FRUGALROUTE_REQUEST_TIMEOUT_S` | `60` | Per-request timeout; on exceed the API returns a typed **504** (no hang). Must be > 0. |
+| `FRUGALROUTE_LOG_LEVEL` | `INFO` | Level for the structured JSON logger. |
+| `FRUGALROUTE_CORS_ORIGINS` | `*` | Comma-separated allow-origins. **Lock down in production.** |
+| `FRUGALROUTE_RATE_LIMIT_ENABLED` | `false` | Enable the per-IP token-bucket rate limit. |
+| `FRUGALROUTE_RATE_LIMIT_BURST` | `60` | Token-bucket capacity (burst per IP). |
+| `FRUGALROUTE_RATE_LIMIT_REFILL_PER_S` | `1.0` | Sustained refill rate (tokens/second). |
+
+**Observability.** Every LLM call and route logs one JSON line (model, tokens, cost,
+latency, escalation, refusal) and every HTTP request gets an `X-Request-ID` (accepted
+or generated) carried into the access log — never the key or a full query body. Live
+counters are at **`GET /api/metrics`**: `requests_total`, `cost_usd_total` (summed from
+the engine's own accounting), `escalation_rate`, `refused_total`, and `latency_p50/p95`
+(process-lifetime, reset on restart).
+
+**Back-pressure & limits.** Over the concurrency cap → typed **503 `busy`** +
+`Retry-After`; over the per-IP rate limit → typed **429 `rate-limited`** + `Retry-After`
+(distinct from the Anthropic-side 429 the SDK retries and the UI shows as a `retry`
+event). Load is shed, never queued unbounded.
+
+---
+
 ## Quickstart
 
 ```bash

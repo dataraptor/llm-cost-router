@@ -49,11 +49,21 @@ class Settings(BaseSettings):
     api_prefix: str = "/api"
     sample_run_path: Path = _DEFAULT_SAMPLE_PATH
     # Live backend: "azure" injects the gpt-5.5 adapter; anything else uses the
-    # native Anthropic client (the engine default). Full config hardening is split 11.
+    # native Anthropic client (the engine default).
     backend: str = ""
     # Optional path to a trained predictive router (joblib); needed for live
     # predictive routing. Absent → predictive live returns a clear bad-request.
     router_path: Path | None = None
+
+    # --- Hardening knobs (split-11). The concurrency cap + request timeout come
+    #     from the engine config (FRUGALROUTE_MAX_CONCURRENCY / _REQUEST_TIMEOUT_S);
+    #     these are the API-specific per-IP rate-limit knobs (a lenient default). ---
+    # Token-bucket capacity (the burst a single IP may send before throttling).
+    rate_limit_burst: int = 60
+    # Sustained refill rate in requests/second (default 60/min = 1/s).
+    rate_limit_refill_per_s: float = 1.0
+    # Master switch: rate limiting off by default for local dev (lock down in prod).
+    rate_limit_enabled: bool = False
 
     @field_validator("cors_origins", mode="before")
     @classmethod

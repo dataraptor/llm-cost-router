@@ -28,6 +28,7 @@ from frugalroute.classifier import (
     save_router,
     train,
 )
+from frugalroute.config import EngineConfig, load_config
 from frugalroute.economics import break_even_acceptance, cascade_saves, mean_cascade_cost
 from frugalroute.embed import embed, get_embedder
 from frugalroute.examples import load_examples
@@ -52,6 +53,7 @@ from frugalroute.models import (
     route_result_from_dict,
     route_result_to_dict,
 )
+from frugalroute.obs import concurrency_guard, configure_logging, get_logger, redact
 from frugalroute.prompts import PROMPT_VERSION
 from frugalroute.router import RouteEvent, route, route_events
 
@@ -61,6 +63,7 @@ __all__ = [
     "PRICING",
     "PROMPT_VERSION",
     "BenchItem",
+    "EngineConfig",
     "EvalReport",
     "EvalRun",
     "FrontierPoint",
@@ -75,10 +78,13 @@ __all__ = [
     "baselines",
     "break_even_acceptance",
     "cascade_saves",
+    "concurrency_guard",
+    "configure_logging",
     "cost_reduction",
     "cost_reduction_at_target",
     "cost_usd",
     "embed",
+    "get_logger",
     "extract_gsm8k_answer",
     "extract_mmlu_answer",
     "frozen_split",
@@ -91,11 +97,13 @@ __all__ = [
     "grade_mmlu",
     "label_cheapest_correct",
     "load_benchmark",
+    "load_config",
     "load_examples",
     "load_router",
     "mean_cascade_cost",
     "mean_cost",
     "oracle",
+    "redact",
     "retention",
     "route",
     "route_events",
