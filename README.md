@@ -47,28 +47,72 @@ ground-truth **oracle** (the cheapest-correct ceiling).
 
 ## Architecture
 
-```text
- query
-   │
-   ▼
-┌──────────┐   in-process   ┌──────────┐    HTTP /api    ┌──────────┐
-│  core    │◀──────────────▶│   eval   │                 │   app    │
-│ engine   │  (no server)   │ harness  │                 │  web UI  │
-└────┬─────┘                └──────────┘                 └────▲─────┘
-     │ import                                                 │ fetch
-     │                      ┌──────────┐    HTTP /api          │
-     └─────────────────────▶│   api    │◀──────────────────────┘
-        in-process          │ FastAPI  │
-                            └──────────┘
+🟦 deterministic (code, no LLM) · 🟨 LLM call (distributional) · 🟥 losing region.
+Full diagrams — the in-process wiring, the SSE narration, the run-once-then-re-threshold
+eval, and the two-tier CI — are in [`docs/architecture.md`](docs/architecture.md).
+
+```mermaid
+flowchart LR
+    Q([query]) --> S{"strategy<br/>code"}
+
+    S -- cascade --> CH["cheap generate<br/>Haiku 4.5"]
+    CH --> GJ["gate judge<br/>cheap LLM → GateVerdict"]
+    GJ --> ACC{"sufficient ∧<br/>conf ≥ τ?<br/>code"}
+    ACC -- "yes" --> AC(["accept cheap<br/>cost = cheap + gate"])
+    ACC -- "no" --> ES["strong generate<br/>Opus 4.8"]
+    ES --> ESR(["escalated<br/>cheap + gate + strong"])
+
+    S -- predictive --> EM["embed query<br/>local bge-small · no key"]
+    EM --> CL{"P(strong) > θ?<br/>code"}
+    CL -- "no" --> PC["cheap generate · 1 call"]
+    CL -- "yes" --> PS["strong generate · 1 call"]
+
+    style CH fill:#fef9c3,stroke:#a16207
+    style GJ fill:#fef9c3,stroke:#a16207
+    style ES fill:#fef9c3,stroke:#a16207
+    style PC fill:#fef9c3,stroke:#a16207
+    style PS fill:#fef9c3,stroke:#a16207
+    style EM fill:#dbeafe,stroke:#1e40af
+    style ACC fill:#dbeafe,stroke:#1e40af
+    style CL fill:#dbeafe,stroke:#1e40af
+    style ESR fill:#fee2e2,stroke:#b91c1c
+```
+
+The engine (`core/`) is a plain importable package; **everything that can import it does,
+in-process — there is no service-to-service HTTP between the Python components.** The
+browser is the one client that can't import a Python module, so it is the only thing that
+talks over HTTP/SSE, through `api/`, a thin adapter.
+
+```mermaid
+flowchart LR
+    subgraph clients["import frugalroute directly · no server"]
+        CLI["core/cli<br/>route · eval · train"]
+        EVAL["eval/<br/>harness on the frozen split"]
+    end
+    API["api/: thin FastAPI adapter<br/>(serialize only — no engine logic)"]
+    CORE["core/: router · cascade gate · predictive<br/>classifier · cost engine · eval harness"]
+    APP["app/: FrugalRoute.dc.html<br/>(browser; renders + 'saved vs Opus' tally)"]
+    BK[("backend · Anthropic Haiku/Opus<br/>or Azure gpt-5.5 adapter")]
+
+    CLI --> CORE
+    EVAL --> CORE
+    API --> CORE
+    CORE -- "injected client" --> BK
+    APP -- "HTTP / SSE" --> API
+
+    style CORE fill:#dbeafe,stroke:#1e40af
+    style API fill:#dbeafe,stroke:#1e40af
+    style BK fill:#fef9c3,stroke:#a16207
 ```
 
 - **`core/`** is the framework-free engine: data contracts, prompts, cache-aware cost,
   the cascade gate and router, the predictive classifier, metrics, and the eval
-  harness. It depends on nothing else in the repo.
+  harness. It depends on nothing else in the repo and never needs a key to import.
 - **`eval/`** holds vendored license-clean benchmark slices plus the frozen-split
   manifest, and imports `frugalroute` directly (no server).
 - **`api/`** is a thin FastAPI adapter over `core` (zero engine logic). It serializes
-  `RouteResult`/`EvalReport` field-for-field and streams the cascade over SSE.
+  `RouteResult`/`EvalReport` field-for-field and streams the cascade over SSE — see
+  [`docs/api.md`](docs/api.md) for the HTTP contract.
 - **`app/`** is the production web UI (a dc-runtime Design Component) wired to the live
   `/api`: a Single-Query view with a running "saved vs. always-Opus" tally, and the
   Frontier (Proof) money-demo below.
