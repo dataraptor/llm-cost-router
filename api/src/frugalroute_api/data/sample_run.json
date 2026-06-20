@@ -1,0 +1,138 @@
+{
+  "reports": [
+    {
+      "strategy": "cascade",
+      "points": [
+        {
+          "operating_param": 0.5,
+          "quality": 1.0,
+          "quality_spread": 0.0,
+          "cost_usd_per_query": 0.0039375,
+          "cost_spread": 9.644865862208742e-05,
+          "escalation_rate": 0.375,
+          "n": 8
+        },
+        {
+          "operating_param": 0.8,
+          "quality": 1.0,
+          "quality_spread": 0.0,
+          "cost_usd_per_query": 0.00475,
+          "cost_spread": 0.00011635076278220083,
+          "escalation_rate": 0.5,
+          "n": 8
+        },
+        {
+          "operating_param": 1.0,
+          "quality": 1.0,
+          "quality_spread": 0.0,
+          "cost_usd_per_query": 0.008,
+          "cost_spread": 0.00019595917942265406,
+          "escalation_rate": 1.0,
+          "n": 8
+        }
+      ],
+      "baselines": {
+        "always_cheap": {
+          "quality": 0.625,
+          "quality_spread": 0.0,
+          "cost": 0.0009000000000000001,
+          "cost_spread": 2.204540768504861e-05
+        },
+        "always_strong": {
+          "quality": 1.0,
+          "quality_spread": 0.0,
+          "cost": 0.0065,
+          "cost_spread": 0.00015921683328090646
+        },
+        "random": {
+          "quality": 0.75,
+          "quality_spread": 0.0,
+          "cost": 0.0036999999999999997,
+          "cost_spread": 9.063112048297758e-05
+        }
+      },
+      "oracle": {
+        "quality": 1.0,
+        "quality_spread": 0.0,
+        "cost": 0.0029999999999999996
+      },
+      "retention_at_target": 1.0,
+      "retention_at_target_spread": 0.0,
+      "cost_reduction_at_target": 0.39423076923076916,
+      "cost_reduction_at_target_spread": 5.233641528945917e-17,
+      "n_refused": 0,
+      "prompt_version": "v1",
+      "model_tiers": [
+        "claude-haiku-4-5",
+        "claude-opus-4-8"
+      ],
+      "n_runs": 3
+    },
+    {
+      "strategy": "predictive",
+      "points": [
+        {
+          "operating_param": 0.4,
+          "quality": 1.0,
+          "quality_spread": 0.0,
+          "cost_usd_per_query": 0.0036999999999999997,
+          "cost_spread": 9.063112048297758e-05,
+          "escalation_rate": 0.5,
+          "n": 8
+        },
+        {
+          "operating_param": 0.6,
+          "quality": 1.0,
+          "quality_spread": 0.0,
+          "cost_usd_per_query": 0.0029999999999999996,
+          "cost_spread": 7.348469228349536e-05,
+          "escalation_rate": 0.375,
+          "n": 8
+        }
+      ],
+      "baselines": {
+        "always_cheap": {
+          "quality": 0.625,
+          "quality_spread": 0.0,
+          "cost": 0.0009000000000000001,
+          "cost_spread": 2.204540768504861e-05
+        },
+        "always_strong": {
+          "quality": 1.0,
+          "quality_spread": 0.0,
+          "cost": 0.0065,
+          "cost_spread": 0.00015921683328090646
+        },
+        "random": {
+          "quality": 0.75,
+          "quality_spread": 0.0,
+          "cost": 0.0036999999999999997,
+          "cost_spread": 9.063112048297758e-05
+        }
+      },
+      "oracle": {
+        "quality": 1.0,
+        "quality_spread": 0.0,
+        "cost": 0.0029999999999999996
+      },
+      "retention_at_target": 1.0,
+      "retention_at_target_spread": 0.0,
+      "cost_reduction_at_target": 0.5384615384615385,
+      "cost_reduction_at_target_spread": 5.233641528945917e-17,
+      "n_refused": 0,
+      "prompt_version": "v1",
+      "model_tiers": [
+        "claude-haiku-4-5",
+        "claude-opus-4-8"
+      ],
+      "n_runs": 3
+    }
+  ],
+  "benchmark": "gsm8k",
+  "frozen_split": {
+    "n_test": 8,
+    "n_calibration": 32,
+    "small_n": true
+  },
+  "generated_at": "2026-06-20T00:00:00+00:00"
+}
