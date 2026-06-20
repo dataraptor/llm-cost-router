@@ -12,6 +12,11 @@ license = { text = "MIT" }
 dependencies = [
     "anthropic>=0.40,<2",
     "pydantic>=2,<3",
+    # Security floor (split-14 dep audit): h11 < 0.16 → CVE-2025-43859 (request
+    # smuggling). h11 is transitive via anthropic→httpx→httpcore; pinned explicitly
+    # so a clean install never resolves the vulnerable version. (httpcore>=1.0.9
+    # follows automatically as the first release allowing h11>=0.16.)
+    "h11>=0.16",
     # Split 04 — predictive router. numpy/scikit-learn/joblib are light enough to
     # import eagerly (no key, no network); the heavy embedder (torch via
     # sentence-transformers) is the optional ``embed`` extra below, imported lazily.

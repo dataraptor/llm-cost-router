@@ -569,6 +569,100 @@ export function toLeaderboardRows(bundle) {
   return rows.map((r) => ({ ...r, nameColor: r.ours ? "var(--accent)" : "var(--ink-900)" }));
 }
 
+// ---------------------------------------------------------------------------
+// Accessibility text (split 14) — screen-reader summaries + the chart data table.
+// Pure + unit-tested; the dc-runtime feeds these into aria-labels / a hidden table
+// / aria-live regions so nothing on either view is conveyed by sight (or color or
+// motion) alone. WCAG 2.1 AA: 1.1.1 (non-text), 1.4.1 (color), 4.1.2 (name/role).
+// ---------------------------------------------------------------------------
+
+/**
+ * One ordered, human sentence describing the route for a screen reader, e.g.
+ * "Cascade route: Haiku generated; gate judged sufficient at confidence 0.92;
+ *  accepted at Haiku 4.5." Mirrors the visual stepper (1.1.1 / 4.1.2).
+ */
+export function routeStepperSummary(ctx) {
+  const { strategy, phase, result: r, gate } = ctx || {};
+  if (phase === "idle" || (!r && phase == null)) return "No route yet.";
+  if (strategy === "predictive") {
+    const parts = ["Predictive route: embedded the query; classified the tier"];
+    if (r) {
+      const ps = r.pStrong == null ? null : clamp01(r.pStrong).toFixed(2);
+      parts.push(
+        (r.escalated ? "predicted the strong tier" : "predicted the cheap tier") +
+          (ps != null ? ` (P(strong)=${ps})` : "") +
+          `; answered with ${r.tierName || "the selected tier"}`,
+      );
+    } else {
+      parts.push("routing in progress");
+    }
+    return parts.join("; ") + ".";
+  }
+  const parts = ["Cascade route: the cheap tier generated a candidate"];
+  if (gate) {
+    parts.push(
+      `gate judged ${gate.sufficient ? "sufficient" : "insufficient"} at confidence ` +
+        clamp01(gate.confidence).toFixed(2),
+    );
+  }
+  if (r) {
+    if (r.cheapRefusedEscalated) parts.push("the cheap tier refused, so it escalated conservatively");
+    // Wording deliberately distinct from the visible "Accepted at <tier>" heading
+    // so it reads naturally AND does not collide with that heading in tests.
+    parts.push(r.escalated ? `escalated to ${r.tierName}` : `the cheap answer was kept (tier ${r.tierName})`);
+  } else if (phase && phase !== "idle") {
+    parts.push("routing in progress");
+  }
+  return parts.join("; ") + ".";
+}
+
+/** A spoken sentence for the running savings tally (announced on settle, polite). */
+export function savedAnnouncement(band, runs) {
+  if (!band) return "";
+  const r = num(runs);
+  const sign = band.pct < 0 ? "spent" : "saved";
+  return `Versus always using Opus, ${sign} ${band.str.replace("−", "")} over ${r} ${
+    r === 1 ? "run" : "runs"
+  } this session (${band.pctStr.replace("▲", "up").replace("▼", "down")}).`;
+}
+
+/** aria-valuetext for the operating-point slider (so SR reads meaning, not "0.8"). */
+export function sliderValueText(symbol, value) {
+  return `${symbol === "θ" ? "theta" : "tau"} ${num(value).toFixed(2)}`;
+}
+
+/**
+ * The headline as one screen-reader sentence + an aria-label for the SVG chart.
+ * Honest: the N/A state says so; the losing region is named, never hidden.
+ */
+export function chartSummary(report, headline) {
+  if (!headline || !headline.hasData) {
+    return "Cost-versus-accuracy frontier chart. No eval run is loaded; run an eval to populate it.";
+  }
+  const lose = headline.belowBE
+    ? " At this operating point the router is below break-even — it costs more than always using Opus."
+    : "";
+  return (
+    "Cost-versus-accuracy frontier chart. At the current operating point the router " +
+    `retains ${headline.retPctStr} of Opus accuracy at ${headline.costPctStr} of the cost.${lose}` +
+    " A full data table follows."
+  );
+}
+
+/**
+ * The visually-hidden data table rows mirroring the cascade FrontierPoints
+ * (1.1.1: the chart's data is available as text). Each row is plain strings.
+ */
+export function chartDataRows(report) {
+  return toCurve(report).map((p) => ({
+    param: num(p.param).toFixed(2),
+    q: num(p.q).toFixed(3),
+    cost: "$" + num(p.cost).toFixed(4),
+    esc: Math.round(num(p.esc) * 100) + "%",
+    n: String(num(p.n)),
+  }));
+}
+
 /** The leaderboard's frozen-split caption pieces, from the bundle (split-08 §2a). */
 export function frozenSplitNote(bundle) {
   const fs = (bundle && bundle.frozen_split) || {};

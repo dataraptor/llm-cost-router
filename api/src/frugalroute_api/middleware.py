@@ -25,6 +25,12 @@ from frugalroute_api import errors
 
 REQUEST_ID_HEADER = "X-Request-ID"
 
+# Reject an oversized request body before reading it (split-14 input hardening).
+# The largest legitimate body is a ~16 KB query (schemas.MAX_QUERY_CHARS) plus JSON
+# overhead; 128 KB is generous headroom while still blocking a multi-megabyte body
+# from being buffered into memory and parsed. Returns a typed 413, not a crash.
+MAX_BODY_BYTES = 128 * 1024
+
 _access_log = get_logger("api.access")
 
 
@@ -53,6 +59,23 @@ class HardeningMiddleware:
             response.headers[REQUEST_ID_HEADER] = request_id
             self._access(method, path, response.status_code, start, request_id)
             await response(scope, receive, send)
+
+        # --- Reject an oversized body up front (before buffering/parsing it) ---
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            try:
+                declared = int(content_length)
+            except ValueError:
+                declared = -1
+            if declared > MAX_BODY_BYTES:
+                await _send_error(
+                    errors.bad_request(
+                        "Request body too large.",
+                        detail=f"max {MAX_BODY_BYTES} bytes",
+                        status_code=413,
+                    )
+                )
+                return
 
         # --- Per-IP rate limit (cheap, applies to every request when enabled) ---
         limiter = getattr(app.state, "limiter", None)

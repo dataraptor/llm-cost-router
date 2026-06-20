@@ -14,6 +14,8 @@ FROM nginxinc/nginx-unprivileged:1.27-alpine@sha256:65e3e85dbaed8ba248841d9d58a8
 
 # Server block: static at /, reverse-proxy /api/* → api:8000, cache headers, gzip.
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Security response headers (CSP/nosniff/frame-ancestors/…), included per-location.
+COPY security-headers.conf /etc/nginx/conf.d/security-headers.conf
 
 # Only the files the served app needs (the .dockerignore also keeps node_modules,
 # tests, and config out of the build context).

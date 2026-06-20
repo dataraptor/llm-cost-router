@@ -387,9 +387,10 @@ def _load_sample_bundle(settings: Settings) -> dict[str, Any]:
     """
     path = settings.sample_run_path
     if not path.exists():
+        # Note: no server path in the client message (split-14 error hygiene).
         raise errors.not_found(
             "No precomputed eval sample is available. Run an eval to populate it "
-            f"(expected at {path}).",
+            "(frugalroute eval --quick), or load the bundled sample.",
         )
     try:
         bundle = json.loads(path.read_text(encoding="utf-8"))

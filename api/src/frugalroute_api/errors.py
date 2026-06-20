@@ -21,6 +21,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 # The closed set of error types the contract exposes (split-06 §2, split-11 §2).
 ErrorType = str  # one of the literals below; kept as str for JSON simplicity.
@@ -135,7 +136,10 @@ def translate_engine_error(exc: Exception) -> APIError:
         return upstream_api_error("The model backend returned an error.", detail=message)
     if isinstance(exc, ValueError):
         return bad_request(message)
-    return upstream_api_error("Unexpected engine error while routing.", detail=message)
+    # Truly-unexpected engine failure: do NOT echo the raw message (it could carry
+    # an internal path / detail). Expose only the exception *class* as a hint; the
+    # full error is available server-side, never to the client (split-14 hygiene).
+    return upstream_api_error("Unexpected engine error while routing.", detail=type(exc).__name__)
 
 
 def _is_missing_key_error(exc: Exception) -> bool:
@@ -165,6 +169,15 @@ def register_handlers(app: FastAPI) -> None:
     async def _handle_api_error(_request: Request, exc: APIError) -> JSONResponse:
         return exc.to_response()
 
+    @app.exception_handler(StarletteHTTPException)
+    async def _handle_http(_request: Request, exc: StarletteHTTPException) -> JSONResponse:
+        # Framework-raised HTTP errors (unmatched route → 404, wrong method → 405)
+        # default to an *unstructured* {"detail": ...} body; reshape them into our
+        # envelope so EVERY non-2xx response shares the one error shape (split-14).
+        error_type = NOT_FOUND if exc.status_code == 404 else BAD_REQUEST
+        message = str(exc.detail) if exc.detail else "HTTP error"
+        return APIError(exc.status_code, error_type, message).to_response()
+
     @app.exception_handler(RequestValidationError)
     async def _handle_validation(_request: Request, exc: RequestValidationError) -> JSONResponse:
         # FastAPI's default 422 body is a list; reshape it into our error model.
@@ -177,10 +190,10 @@ def register_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def _handle_unexpected(_request: Request, exc: Exception) -> JSONResponse:
-        # Last-resort safety net: an unhandled exception is still structured.
-        return upstream_api_error(
-            "Internal server error.", detail=f"{type(exc).__name__}: {exc}"
-        ).to_response()
+        # Last-resort safety net: an unhandled exception is still structured. Expose
+        # only the exception *class* (never the message — it could carry an internal
+        # path / detail); the full error stays server-side (split-14 hygiene).
+        return upstream_api_error("Internal server error.", detail=type(exc).__name__).to_response()
 
 
 def _summarize_validation(errors: Sequence[Any]) -> str:

@@ -186,7 +186,10 @@ class EvalRequest(BaseModel):
     strategy: Literal["cascade", "predictive", "both"]
     benchmark: Literal["gsm8k", "mmlu"]
     quick: bool = True
-    grid: list[float] | None = None
+    # Cap the grid length so a pathological many-thousand-point sweep can't be
+    # requested over HTTP (each point is cheap arithmetic, but the list is unbounded
+    # user input); a real sweep is a handful of taus/thetas.
+    grid: list[float] | None = Field(default=None, max_length=64)
     repeats: int | None = Field(default=None, ge=1, le=10)
 
 

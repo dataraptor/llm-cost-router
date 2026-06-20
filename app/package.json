@@ -7,11 +7,14 @@
   "scripts": {
     "test": "node --test \"tests/unit/**/*.test.js\"",
     "test:e2e": "playwright test",
+    "test:a11y": "playwright test tests/e2e/a11y.spec.js",
+    "test:perf": "node tests/e2e/perf.mjs",
     "test:integration": "playwright test --config playwright.integration.config.js",
     "screenshot": "node tests/e2e/screenshot.mjs",
     "serve": "node tests/e2e/static-server.mjs"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.11.3",
     "@playwright/test": "^1.49.0"
   }
 }

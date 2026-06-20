@@ -185,7 +185,10 @@ def test_unknown_example_404(client: TestClient) -> None:
 
 
 def test_oversized_query_422(client: TestClient) -> None:
-    # A pathological multi-megabyte body is a clean 422, not an upstream call.
+    # A pathological multi-megabyte body is rejected up front by the body-size guard
+    # (split-14) with a typed 413 — before it is buffered/parsed, never an upstream
+    # call. (A query just over the char cap but under the body cap is still a 422 —
+    # see test_security.test_overlong_query_is_typed_422.)
     resp = client.post("/api/route", json={"strategy": "cascade", "query": "x" * 2_000_000})
-    assert resp.status_code == 422
+    assert resp.status_code == 413
     assert resp.json()["error"]["type"] == "bad-request"

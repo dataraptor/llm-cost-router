@@ -15,7 +15,13 @@ dependencies = [
     "pydantic>=2,<3",
     # Settings surface (config.py). Pydantic v2 moved BaseSettings into this
     # package; declared here so a clean install (e.g. the container) has it.
-    "pydantic-settings>=2,<3",
+    "pydantic-settings>=2.14.2,<3",
+    # Security floors (split-14 dep audit; pip-audit clean above these):
+    #   starlette < 1.3.1          → CVE-2026-48817/48818/54282/54283 (DoS/parsing);
+    #   pydantic-settings < 2.14.2 → GHSA-4xgf-cpjx-pc3j.
+    # starlette is transitive via fastapi; pinned explicitly so a clean install
+    # (e.g. the container) never resolves a vulnerable version.
+    "starlette>=1.3.1",
     # The engine, imported in-process (no service-to-service HTTP). Installed as an
     # editable path dep alongside the api: `pip install -e core && pip install -e api`.
     "frugalroute",
