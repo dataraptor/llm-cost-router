@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { ApiError, getConfig, getExamples, postRoute } from "../../src/api.js";
+import { ApiError, getConfig, getExamples, postRoute, getEvalSample, postEval } from "../../src/api.js";
 
 /** A minimal fake Response. */
 function fakeRes(status, body) {
@@ -143,4 +143,35 @@ test("empty 2xx body → null (no parse crash)", async () => {
   const fetchFn = fakeFetch(fakeRes(204, ""));
   const out = await postRoute({ strategy: "cascade", query: "q" }, { base: BASE, fetchFn });
   assert.equal(out, null);
+});
+
+// --- split-08: the eval bundle client --------------------------------------
+
+test("getEvalSample GETs /eval/sample and returns the bundle", async () => {
+  const bundle = { reports: [{ strategy: "cascade", points: [] }], benchmark: "gsm8k" };
+  const fetchFn = fakeFetch(fakeRes(200, bundle));
+  const out = await getEvalSample({ base: BASE, fetchFn });
+  assert.equal(fetchFn.calls[0].url, BASE + "/eval/sample");
+  assert.equal(fetchFn.calls[0].init, undefined); // a plain GET
+  assert.deepEqual(out, bundle);
+});
+
+test("getEvalSample 404 → ApiError{type:'not-found'} (drives the N/A state)", async () => {
+  const fetchFn = fakeFetch(fakeRes(404, { error: { type: "not-found", message: "No precomputed eval sample." } }));
+  await assert.rejects(
+    getEvalSample({ base: BASE, fetchFn }),
+    (err) => err instanceof ApiError && err.type === "not-found" && err.status === 404,
+  );
+});
+
+test("postEval POSTs {quick:true} to /eval and returns the fresh bundle", async () => {
+  const bundle = { reports: [], benchmark: "gsm8k" };
+  const fetchFn = fakeFetch(fakeRes(200, bundle));
+  const body = { strategy: "both", benchmark: "gsm8k", quick: true };
+  const out = await postEval(body, { base: BASE, fetchFn });
+  const call = fetchFn.calls[0];
+  assert.equal(call.url, BASE + "/eval");
+  assert.equal(call.init.method, "POST");
+  assert.deepEqual(JSON.parse(call.init.body), body);
+  assert.deepEqual(out, bundle);
 });

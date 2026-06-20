@@ -18,6 +18,8 @@ window.FR = {
   getConfig: api.getConfig,
   getExamples: api.getExamples,
   postRoute: api.postRoute,
+  getEvalSample: api.getEvalSample,
+  postEval: api.postEval,
   ApiError: api.ApiError,
   apiBaseUrl,
   // pure format/mapping helpers (namespaced so the logic reads `FR.format.*`)

@@ -221,13 +221,19 @@ button.ff{font-family:var(--font-ui);cursor:pointer;border:none;background:none;
 
       <section style="flex:1 1 540px;min-width:300px">
         <div style="min-height:84px;margin-bottom:8px">
+          <sc-if value="{{ frontierNA }}" hint-placeholder-val="{{ false }}">
+            <div style="font-weight:600;font-size:clamp(1.5rem,4vw,2.4rem);line-height:1.15;letter-spacing:-0.02em;color:var(--ink-400)">—</div>
+            <div style="font-size:13px;color:var(--ink-500);margin-top:8px">No eval run loaded. Run <span style="font-family:var(--font-mono)">frugalroute eval --quick</span>, or load the bundled sample.</div>
+          </sc-if>
           <sc-if value="{{ belowBE }}" hint-placeholder-val="{{ false }}">
             <div style="font-weight:600;font-size:clamp(1.5rem,4vw,2.4rem);line-height:1.15;letter-spacing:-0.02em;color:var(--alert)">Below break-even — costs more than Opus here.</div>
           </sc-if>
           <sc-if value="{{ aboveBE }}" hint-placeholder-val="{{ true }}">
             <div style="font-weight:600;font-size:clamp(1.5rem,4vw,2.4rem);line-height:1.15;letter-spacing:-0.02em">Retains <span style="color:var(--accent)">{{ retPctStr }}</span> of Opus accuracy at <span style="color:var(--accent)">{{ costPctStr }}</span> of the cost.</div>
           </sc-if>
-          <div style="font-family:var(--font-mono);font-size:12px;color:var(--ink-400);margin-top:8px">±1.2% · n=3 · frozen split · cascade @ {{ opSymbolF }}={{ frontierTauStr }}</div>
+          <sc-if value="{{ hasData }}" hint-placeholder-val="{{ true }}">
+            <div style="font-family:var(--font-mono);font-size:12px;color:var(--ink-400);margin-top:8px">{{ retSpreadStr }} · n={{ nRuns }} · frozen split · cascade @ {{ opSymbolF }}={{ frontierTauStr }}</div>
+          </sc-if>
         </div>
 
         <svg viewBox="0 0 648 360" style="width:100%;height:auto;display:block;font-family:var(--font-mono);user-select:none" onClick="{{ clearInspect }}">
@@ -326,8 +332,12 @@ button.ff{font-family:var(--font-ui);cursor:pointer;border:none;background:none;
             </div>
           </div>
         </sc-for>
-        <div style="font-size:11px;color:var(--ink-400);margin-top:2px">frozen test split n≈84 · wide CI — calibrated only on the calibration split</div>
-        <div style="display:inline-flex;align-self:flex-start;align-items:center;gap:6px;border:1px solid var(--line-strong);border-radius:999px;padding:4px 11px;font-size:11px;color:var(--ink-500)">n_refused: 2 (surfaced, counted)</div>
+        <sc-if value="{{ hasData }}" hint-placeholder-val="{{ true }}">
+        <div style="font-size:11px;color:var(--ink-400);margin-top:2px">frozen test split n≈{{ frozenNWide }} — calibrated only on the calibration split</div>
+        </sc-if>
+        <sc-if value="{{ showRefused }}" hint-placeholder-val="{{ false }}">
+        <div style="display:inline-flex;align-self:flex-start;align-items:center;gap:6px;border:1px solid var(--line-strong);border-radius:999px;padding:4px 11px;font-size:11px;color:var(--ink-500)">n_refused: {{ nRefused }} (surfaced, counted)</div>
+        </sc-if>
         <button class="ff" onClick="{{ replay }}" style="align-self:flex-start;margin-top:6px;font-size:12px;color:var(--accent);font-weight:500">↻ replay reveal</button>
       </section>
     </div>
@@ -373,6 +383,10 @@ class Component extends DCLogic {
     theme:'light', showInfo:false, inspect:null,
     // live data (split 07): loaded from /api/config + /api/examples on mount
     config:null, examples:[],
+    // frontier data (split 08): the /api/eval/sample bundle, loaded on first
+    // arrival at the Proof view. bundleError holds the ApiError type (404 →
+    // "not-found" → the honest N/A empty state). No hardcoded frontier arrays.
+    bundle:null, bundleLoaded:false, bundleError:null,
   };
   _timers = [];
   _mounted = false;
@@ -382,25 +396,10 @@ class Component extends DCLogic {
   // pricing + the always-Opus reference come from /api/config, the example picker
   // from /api/examples, and every answer/gate/cost from a live /api/route call.
 
-  // frontier data
-  CASCADE = [
-    {param:0.5,q:0.880,cost:0.0021,esc:0.20,n:84},
-    {param:0.6,q:0.910,cost:0.0025,esc:0.32,n:84},
-    {param:0.7,q:0.935,cost:0.0028,esc:0.44,n:84},
-    {param:0.8,q:0.950,cost:0.0030,esc:0.55,n:84},
-    {param:0.9,q:0.962,cost:0.0048,esc:0.74,n:84},
-    {param:1.0,q:0.970,cost:0.0082,esc:0.95,n:84},
-  ];
-  PRED = [
-    {param:0.3,q:0.860,cost:0.0018,esc:0.16,n:84},
-    {param:0.4,q:0.900,cost:0.0022,esc:0.28,n:84},
-    {param:0.5,q:0.930,cost:0.0026,esc:0.40,n:84},
-    {param:0.6,q:0.945,cost:0.0034,esc:0.54,n:84},
-    {param:0.7,q:0.955,cost:0.0046,esc:0.70,n:84},
-  ];
-  BASE = { cheap:{q:0.71,cost:0.0014}, strong:{q:0.97,cost:0.0070},
-           random:[{q:0.71,cost:0.0014},{q:0.84,cost:0.0030},{q:0.97,cost:0.0070}] };
-  ORACLE = { q:0.99, cost:0.0026 };
+  // Frontier geometry. The arrays of points (cascade/predictive/baselines/oracle)
+  // are NO LONGER hardcoded — they are mapped from the live /api/eval/sample bundle
+  // (split 08) via window.FR.format.* in renderVals(). `PLOT.xmax` is derived from
+  // the real max cost each render; the scaling helpers below are unchanged.
   PLOT = { x0:64, y0:20, w:560, h:300, xmax:0.0086 };
 
   sx(c){ const p=this.PLOT; return p.x0 + (c/p.xmax)*p.w; }
@@ -421,8 +420,8 @@ class Component extends DCLogic {
     if(p.theme) patch.theme=p.theme;
     if(p.startView) patch.view=p.startView;
     this.setState(patch);
-    if((p.startView||this.state.view)==='frontier') this.after(80,()=>this.setState({revealed:true}));
     this.init();
+    if((p.startView||this.state.view)==='frontier') this.enterFrontier();
   }
   componentWillUnmount(){ this._mounted=false; this.clearTimers(); this.cancelTweens(); }
 
@@ -462,6 +461,46 @@ class Component extends DCLogic {
     this.setState(patch);
   }
 
+  // --- frontier bundle plumbing (split 08) ---------------------------------
+  // Load the /api/eval/sample bundle once, on first arrival at the Proof view.
+  // 404 / failure → bundleError (the honest N/A empty state). Cached after the
+  // first load (bundleLoaded) so re-visits are instant.
+  loadBundle(){
+    if(this.state.bundleLoaded) return Promise.resolve();
+    if(this._bundlePromise) return this._bundlePromise;
+    this._bundlePromise = (async()=>{
+      let FR=this.fr();
+      if(!FR){ try{ FR=await this.whenFr(); }catch(e){ return; } }
+      try {
+        const bundle = await FR.getEvalSample();
+        if(!this._mounted) return;
+        const cascade = FR.format.pickReport(bundle,'cascade');
+        const cp = FR.format.chosenPoint(cascade);
+        const patch={ bundle, bundleLoaded:true, bundleError:null };
+        // Settle the slider on the proven target (lowest-cost point >=95% retention)
+        // so the default headline IS the headline number.
+        if(cp && Number.isFinite(cp.param)) patch.frontierTau=cp.param;
+        this.setState(patch);
+      } catch(err){
+        if(!this._mounted) return;
+        this.setState({ bundle:null, bundleLoaded:true, bundleError:(err&&err.type)||'api-error' });
+      }
+    })();
+    return this._bundlePromise;
+  }
+  async enterFrontier(){
+    await this.loadBundle();
+    if(!this._mounted || this.state.view!=='frontier') return;
+    this.playReveal();
+  }
+  // The §6 three-step draw-in. Under reduced motion the CSS transitions are off,
+  // so we land on the final state immediately (no draw-in / count-up).
+  playReveal(){
+    if(this.reducedMotion()){ this.setState({revealed:true}); return; }
+    this.setState({revealed:false});
+    this.after(70,()=>this.setState({revealed:true}));
+  }
+
   curEx(){ const list=this.state.examples||[]; return list.find(e=>e.id===this.state.exampleId)||list[0]||null; }
   after(ms,fn){ const id=setTimeout(fn,ms); this._timers.push(id); }
   clearTimers(){ this._timers.forEach(clearTimeout); this._timers=[]; }
@@ -479,8 +518,8 @@ class Component extends DCLogic {
   cancelTweens(){ if(this._rafs){ for(const k in this._rafs) cancelAnimationFrame(this._rafs[k]); this._rafs={}; } }
 
   goQuery = ()=> this.setState({view:'query'});
-  goFrontier = ()=>{ this.setState({view:'frontier',revealed:false}); this.after(70,()=>this.setState({revealed:true})); };
-  replay = ()=>{ this.setState({revealed:false}); this.after(70,()=>this.setState({revealed:true})); };
+  goFrontier = ()=>{ this.setState({view:'frontier',revealed:false}); this.enterFrontier(); };
+  replay = ()=> this.playReveal();
   toggleTheme = ()=> this.setState({theme:this.state.theme==='dark'?'light':'dark'});
   toggleInfo = ()=> this.setState({showInfo:!this.state.showInfo});
   setCascade = ()=> this.setState({strategy:'cascade',phase:'idle',result:null,gate:null,costDisplay:0,error:null});
@@ -574,37 +613,52 @@ class Component extends DCLogic {
     const sq=F.deriveSingleQuery({strategy:S.strategy, phase:S.phase, result:S.result, gate:S.gate,
       costDisplay:S.costDisplay, tau:S.tau, config:S.config, error:S.error});
 
-    // ---- frontier (still mockup data; wired to /api/eval/sample in split 08) ----
-    const fi=this.interp(this.CASCADE,S.frontierTau);
-    const belowBE=fi.cost>alwaysOpus+1e-9;
-    const retPct=Math.round(fi.q/this.BASE.strong.q*100);
-    const costPct=Math.round(fi.cost/alwaysOpus*100);
+    // ---- frontier — mapped from the live /api/eval/sample bundle (split 08) ----
+    const bundle=S.bundle;
+    const cascadeReport=F.pickReport(bundle,'cascade');
+    const predReport=F.pickReport(bundle,'predictive');
+    const cascade=F.toCurve(cascadeReport);
+    const pred=F.toCurve(predReport);
+    const base=F.toBaselines(cascadeReport||predReport);
+    const oracle=F.toOracle(cascadeReport||predReport);
+    const headReport=cascadeReport||predReport;
+    const headCurve=cascade.length?cascade:pred;
+    const hasData=cascade.length>0 || pred.length>0;
 
-    const cascadePts=this.CASCADE.map((d,i)=>({ cx:+this.sx(d.cost).toFixed(1), cy:+this.sy(d.q).toFixed(1),
+    // x-axis scale from the real max cost (keeps the same scaling approach).
+    this.PLOT.xmax=F.frontierXMax(cascade.concat(pred,[base.cheap,base.strong,base.randomPoint,oracle]));
+
+    // headline (interpolated along the cascade curve as the slider moves)
+    const head=F.toHeadline(headReport,S.frontierTau);
+    const frontierNA=!hasData;
+    const belowBE=hasData && head.belowBE;
+    const aboveBE=hasData && !head.belowBE;
+
+    const cascadePts=cascade.map((d)=>({ cx:+this.sx(d.cost).toFixed(1), cy:+this.sy(d.q).toFixed(1),
       onTap:(e)=>this.inspectPoint(e,'cascade',d) }));
-    const predPts=this.PRED.map((d)=>{ const x=this.sx(d.cost), y=this.sy(d.q);
+    const predPts=pred.map((d)=>{ const x=this.sx(d.cost), y=this.sy(d.q);
       return { rx:+(x-3.5).toFixed(1), ry:+(y-3.5).toFixed(1), rot:`rotate(45 ${x.toFixed(1)} ${y.toFixed(1)})`,
         onTap:(e)=>this.inspectPoint(e,'predictive',d) }; });
-    const cheapX=this.sx(this.BASE.cheap.cost), cheapY=this.sy(this.BASE.cheap.q);
-    const strongX=this.sx(this.BASE.strong.cost), strongY=this.sy(this.BASE.strong.q);
-    const oracleX=this.sx(this.ORACLE.cost), oracleY=this.sy(this.ORACLE.q);
-    const loseX=this.sx(alwaysOpus), loseW=(this.PLOT.x0+this.PLOT.w)-loseX;
-    const op=this.interp(this.CASCADE,S.frontierTau);
+    const cheapX=this.sx(base.cheap.cost), cheapY=this.sy(base.cheap.q);
+    const strongX=this.sx(base.strong.cost), strongY=this.sy(base.strong.q);
+    const oracleX=this.sx(oracle.cost), oracleY=this.sy(oracle.q);
+    // losing region begins at the always-strong (Opus) cost of THIS eval.
+    const loseX=this.sx(base.strong.cost), loseW=Math.max(0,(this.PLOT.x0+this.PLOT.w)-loseX);
+    const op=headCurve.length?this.interp(headCurve,S.frontierTau):{q:0,cost:0};
     const opCx=+this.sx(op.cost).toFixed(1), opCy=+this.sy(op.q).toFixed(1);
     const gapX=opCx, gapW=Math.max(0,strongX-opCx), gapH=Math.max(0,320-opCy);
 
-    const cascadeLen=this.lenOf(this.CASCADE);
-    const rev=S.revealed;
+    const cascadeLen=this.lenOf(cascade);
+    const rev=S.revealed && hasData;
 
-    // leaderboard (mockup data — split 08)
-    const rows=[
-      {name:'always-cheap',q:'0.71',spread:'±.02',cost:'0.0014',ret:'73%',cut:'80%',ours:false,note:'cost floor'},
-      {name:'always-strong',q:'0.97',spread:'±.01',cost:'0.0070',ret:'100%',cut:'0%',ours:false,note:'reference'},
-      {name:'random @ cost',q:'0.84',spread:'±.03',cost:'0.0030',ret:'87%',cut:'57%',ours:false,note:'matched-cost chance'},
-      {name:'FrugalRoute · cascade',q:'0.95',spread:'±.01',cost:'0.0030',ret:'98%',cut:'57%',ours:true,note:'τ=0.80'},
-      {name:'FrugalRoute · predictive',q:'0.94',spread:'±.02',cost:'0.0026',ret:'97%',cut:'63%',ours:true,note:'θ=0.60'},
-      {name:'oracle (ceiling)',q:'0.99',spread:'±.00',cost:'0.0026',ret:'—',cut:'—',ours:false,note:'uses ground truth'},
-    ].map(x=>({...x,nameColor:x.ours?'var(--accent)':'var(--ink-900)'}));
+    // series labels anchored at the real curve extents (hidden via opacity groups)
+    const lastCas=cascade.length?cascade[cascade.length-1]:null;
+    const lastPred=pred.length?pred[pred.length-1]:null;
+
+    // leaderboard — six fixed-order rows from the bundle (oracle ret/cut "—")
+    const rows=F.toLeaderboardRows(bundle);
+    const frozen=F.frozenSplitNote(bundle);
+    const nRefused=headReport?(headReport.n_refused||0):0;
 
     const insp=S.inspect;
 
@@ -635,30 +689,37 @@ class Component extends DCLogic {
       // §3a — the escalation-loss reference is now the real /config value
       alwaysOpusStr: F.safe4(alwaysOpus),
 
-      // frontier headline
-      belowBE, aboveBE:!belowBE, retPctStr:retPct+'%', costPctStr:costPct+'%',
+      // frontier headline (interpolated against the REAL cascade points)
+      belowBE, aboveBE, frontierNA, hasData,
+      retPctStr:head.retPctStr, costPctStr:head.costPctStr,
+      retSpreadStr: headReport?F.pctSpreadStr(headReport.retention_at_target_spread):'',
+      nRuns: headReport?headReport.n_runs:'',
       frontierTau:S.frontierTau, frontierTauStr:S.frontierTau.toFixed(2), opSymbolF:'τ',
 
-      // chart paths
-      cascadePath:this.pathOf(this.CASCADE), predPath:this.pathOf(this.PRED),
-      randomPath:this.pathOf(this.BASE.random),
+      // chart paths (empty / off-canvas under N/A so only the axes show — never a fake series)
+      cascadePath:this.pathOf(cascade), predPath:this.pathOf(pred),
+      randomPath: hasData?this.pathOf(base.random):'',
       cascadeLen:+cascadeLen.toFixed(1), cascadeDash: rev?0:+cascadeLen.toFixed(1),
       seriesOpacity: rev?1:0, baseOpacity: rev?1:0, markerOpacity: rev?1:0,
       cascadePts, predPts,
       cheapX:+cheapX.toFixed(1), cheapY:+cheapY.toFixed(1),
       strongX:+strongX.toFixed(1), strongY:+strongY.toFixed(1),
       oracleX:+oracleX.toFixed(1), oracleStarY:+oracleY.toFixed(1),
-      oracleY:+oracleY.toFixed(1), oracleLabelY:+(oracleY-5).toFixed(1),
-      loseX:+loseX.toFixed(1), loseW:+loseW.toFixed(1), loseLabelX:+(loseX+loseW/2).toFixed(1),
+      oracleY: hasData?+oracleY.toFixed(1):-200, oracleLabelY: hasData?+(oracleY-5).toFixed(1):-200,
+      loseX:+loseX.toFixed(1), loseW: hasData?+loseW.toFixed(1):0, loseLabelX: hasData?+(loseX+loseW/2).toFixed(1):-200,
       opCx, opCy, gapX, gapW:+gapW.toFixed(1), gapH:+gapH.toFixed(1),
       gapMidX:+(opCx+gapW/2).toFixed(1), gapTextY:+(opCy+gapH-8).toFixed(1),
-      casLabelX:+(this.sx(0.0048)+8).toFixed(1), casLabelY:+(this.sy(0.962)-6).toFixed(1),
-      predLabelX:+(this.sx(0.0046)+8).toFixed(1), predLabelY:+(this.sy(0.955)+14).toFixed(1),
-      randLabelX:+(this.sx(0.0030)+8).toFixed(1), randLabelY:+(this.sy(0.84)+4).toFixed(1),
+      casLabelX: lastCas?+(this.sx(lastCas.cost)+8).toFixed(1):-200, casLabelY: lastCas?+(this.sy(lastCas.q)-6).toFixed(1):-200,
+      predLabelX: lastPred?+(this.sx(lastPred.cost)+8).toFixed(1):-200, predLabelY: lastPred?+(this.sy(lastPred.q)+14).toFixed(1):-200,
+      randLabelX:+(this.sx(base.randomPoint.cost)+8).toFixed(1), randLabelY:+(this.sy(base.randomPoint.q)+4).toFixed(1),
 
       rows,
 
-      provChips: F.provChips(S.config),
+      // frozen-split caption + refusal chip (split-08 §2a literal→binding edits)
+      frozenNWide: frozen.n+frozen.wideCI,
+      showRefused: nRefused>0, nRefused,
+
+      provChips: F.provChips(S.config, headReport),
 
       // inspect
       inspect:!!insp, inspectX:insp?insp.x:0, inspectY:insp?insp.y:0,
@@ -669,7 +730,9 @@ class Component extends DCLogic {
   inspectPoint(e,kind,d){
     if(e&&e.stopPropagation) e.stopPropagation();
     const x=(e.clientX||120)+12, y=(e.clientY||120)+12;
-    const body=`operating_param  ${d.param.toFixed(2)}\nquality          ${d.q.toFixed(3)} ±.01\n$/query          ${d.cost.toFixed(4)}\nescalation_rate  ${(d.esc*100).toFixed(0)}%\nn                ${d.n}`;
+    const FR=this.fr();
+    const sp = FR ? FR.format.spreadStr(d.qSpread) : '';
+    const body=`operating_param  ${d.param.toFixed(2)}\nquality          ${d.q.toFixed(3)} ${sp}\n$/query          ${d.cost.toFixed(4)}\nescalation_rate  ${(d.esc*100).toFixed(0)}%\nn                ${d.n}`;
     this.setState({inspect:{title:'FrugalRoute · '+kind, body, color:'var(--accent)', x:Math.min(x,window.innerWidth-250), y:Math.min(y,window.innerHeight-160)}});
   }
 }

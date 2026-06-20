@@ -151,8 +151,12 @@ export function mapExamples(list) {
     .map((e) => ({ id: e.id, bench: e.benchmark, label: e.label, query: e.query }));
 }
 
-/** Provenance footer chips, sourced entirely from /config. */
-export function provChips(config) {
+/**
+ * Provenance footer chips, sourced from /config (and, on the Frontier, the eval
+ * report for `n_runs`). `report` is optional so the split-07 single-query callers
+ * keep their three chips; passing a bundle's report adds the `n_runs` chip (split-08).
+ */
+export function provChips(config, report) {
   if (!config || typeof config !== "object") return [];
   const chips = [];
   if (config.prompt_version) chips.push("prompt_version: " + config.prompt_version);
@@ -161,6 +165,7 @@ export function provChips(config) {
     : "";
   if (tiers) chips.push("tiers: " + tiers);
   if (config.pricing_pinned_date) chips.push("pricing pinned " + config.pricing_pinned_date);
+  if (report && report.n_runs != null) chips.push("n_runs: " + report.n_runs);
   return chips;
 }
 
@@ -324,4 +329,229 @@ export function deriveSingleQuery(ctx) {
     errorMessage,
     showErrorProof: missingKey,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Frontier view model (split 08) — map the /api/eval/sample EvalReport bundle
+// onto the chart/leaderboard shapes the FROZEN SVG geometry already consumes.
+// Pure + unit-tested; the dc-runtime's renderVals() feeds these into sx/sy/etc.
+// ---------------------------------------------------------------------------
+
+/** Percent as a rounded integer string ("0.732" → "73%"); null/NaN → "—". */
+function pctInt(value) {
+  if (value == null) return "—";
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.round(n * 100) + "%" : "—";
+}
+
+/** Quality 2-dp string ("0.95"); guards NaN. */
+function qStr(value) {
+  return num(value).toFixed(2);
+}
+
+/** A "±.02"-style spread suffix (2-dp, leading zero stripped). */
+export function spreadStr(value) {
+  const s = Math.abs(num(value)).toFixed(2);
+  return "±" + s.replace(/^0(?=\.)/, "");
+}
+
+/** A "±1.2%"-style percentage spread for the headline caption. */
+export function pctSpreadStr(value) {
+  return "±" + (Math.abs(num(value)) * 100).toFixed(1) + "%";
+}
+
+/** The cascade/predictive report for a strategy, or null. */
+export function pickReport(bundle, strategy) {
+  const reports = bundle && Array.isArray(bundle.reports) ? bundle.reports : [];
+  return reports.find((r) => r && r.strategy === strategy) || null;
+}
+
+/** FrontierPoint[] → the chart's point shape (preserve the geometry's field names). */
+export function toCurve(report) {
+  const pts = report && Array.isArray(report.points) ? report.points : [];
+  return pts.map((p) => ({
+    param: num(p && p.operating_param),
+    q: num(p && p.quality),
+    qSpread: num(p && p.quality_spread),
+    cost: num(p && p.cost_usd_per_query),
+    costSpread: num(p && p.cost_spread),
+    esc: num(p && p.escalation_rate),
+    n: num(p && p.n),
+  }));
+}
+
+/**
+ * report.baselines → `{cheap, strong, random:[cheap,randomPoint,strong], randomPoint}`.
+ * `random` is the polyline the dashed baseline path draws (cheap → random → strong).
+ */
+export function toBaselines(report) {
+  const b = (report && report.baselines) || {};
+  const pt = (o) => ({ q: num(o && o.quality), cost: num(o && o.cost), qSpread: num(o && o.quality_spread) });
+  const cheap = pt(b.always_cheap);
+  const strong = pt(b.always_strong);
+  const randomPoint = pt(b.random);
+  return { cheap, strong, randomPoint, random: [cheap, randomPoint, strong] };
+}
+
+/** report.oracle → `{q, cost, qSpread}` (the unachievable ceiling). */
+export function toOracle(report) {
+  const o = (report && report.oracle) || {};
+  return { q: num(o.quality), cost: num(o.cost), qSpread: num(o.quality_spread) };
+}
+
+/**
+ * The frontier point the headline is taken from — replicates the engine's
+ * `metrics.cost_reduction_at_target`: among points at/above the retention target,
+ * the lowest-cost one; else the highest-retention point. Returns null when there
+ * are no points / no usable strong reference.
+ */
+export function chosenPoint(report, target = 0.95) {
+  const curve = toCurve(report);
+  const strongQ = num(report && report.baselines && report.baselines.always_strong && report.baselines.always_strong.quality);
+  if (!curve.length || !(strongQ > 0)) return null;
+  const scored = curve
+    .map((p) => ({ p, ret: p.q / strongQ }))
+    .filter((s) => Number.isFinite(s.ret));
+  if (!scored.length) return null;
+  const qualifying = scored.filter((s) => s.ret >= target);
+  const pick = qualifying.length
+    ? qualifying.reduce((a, b) => (b.p.cost < a.p.cost ? b : a))
+    : scored.reduce((a, b) => (b.ret > a.ret ? b : a));
+  return pick.p;
+}
+
+/**
+ * Interpolate a curve at operating point `t` (mirrors the dc-runtime's `interp`).
+ * Used by {@link toHeadline} so the pure headline test doesn't need the component.
+ */
+export function interpCurve(pts, t) {
+  const arr = Array.isArray(pts) ? pts : [];
+  const tt = num(t);
+  if (!arr.length) return { param: tt, q: 0, cost: 0, esc: 0, n: 0 };
+  if (tt <= arr[0].param) return arr[0];
+  const last = arr[arr.length - 1];
+  if (tt >= last.param) return last;
+  for (let i = 1; i < arr.length; i++) {
+    if (tt <= arr[i].param) {
+      const a = arr[i - 1];
+      const b = arr[i];
+      const denom = b.param - a.param;
+      const f = denom !== 0 ? (tt - a.param) / denom : 0;
+      return {
+        param: tt,
+        q: a.q + (b.q - a.q) * f,
+        cost: a.cost + (b.cost - a.cost) * f,
+        esc: a.esc + (b.esc - a.esc) * f,
+        n: b.n,
+      };
+    }
+  }
+  return last;
+}
+
+/**
+ * The headline at the slider's operating point: retention (% of strong accuracy)
+ * and cost (% of strong cost) interpolated along the cascade curve, plus `belowBE`
+ * (cost above the always-strong reference → the losing region). Empty/undefined →
+ * an honest "—"/`hasData:false` (the N/A state), never a fake zero.
+ */
+export function toHeadline(report, frontierTau) {
+  const curve = toCurve(report);
+  const base = toBaselines(report);
+  const strongQ = base.strong.q;
+  const strongCost = base.strong.cost;
+  if (!curve.length || !(strongQ > 0) || !(strongCost > 0)) {
+    return { retPctStr: "—", costPctStr: "—", belowBE: false, hasData: false };
+  }
+  const pt = interpCurve(curve, frontierTau);
+  return {
+    retPctStr: Math.round((pt.q / strongQ) * 100) + "%",
+    costPctStr: Math.round((pt.cost / strongCost) * 100) + "%",
+    belowBE: pt.cost > strongCost + 1e-9,
+    hasData: true,
+  };
+}
+
+/** Largest cost in the bundle (points + baselines + oracle), ×1.07 headroom. */
+export function frontierXMax(points) {
+  const arr = Array.isArray(points) ? points : [];
+  let max = 0;
+  for (const p of arr) {
+    const c = num(p && p.cost);
+    if (c > max) max = c;
+  }
+  const headroom = max * 1.07;
+  // Floor keeps the fixed $0–$.008 axis ticks meaningful for an empty/tiny run.
+  return headroom > 0.001 ? headroom : 0.0086;
+}
+
+/** One FrugalRoute (cascade/predictive) leaderboard row from its report. */
+function strategyRow(name, report, symbol) {
+  const cp = report ? chosenPoint(report) : null;
+  return {
+    name,
+    ours: true,
+    note: cp ? symbol + "=" + num(cp.param).toFixed(2) : symbol + "=—",
+    q: cp ? qStr(cp.q) : "—",
+    spread: cp ? spreadStr(cp.qSpread) : "",
+    cost: cp ? safe4(cp.cost) : "—",
+    ret: report ? pctInt(report.retention_at_target) : "—",
+    cut: report ? pctInt(report.cost_reduction_at_target) : "—",
+  };
+}
+
+/**
+ * The six fixed-order leaderboard rows (§11 / the engine's `format_leaderboard`):
+ * always-cheap · always-strong · random · cascade · predictive · oracle. Baseline
+ * retention/cut are measured against always-strong; the two FrugalRoute rows use
+ * the report's headline `retention_at_target`/`cost_reduction_at_target`; the
+ * oracle's retention/cut are "—" (a ceiling, not a target).
+ */
+export function toLeaderboardRows(bundle) {
+  const cascade = pickReport(bundle, "cascade");
+  const predictive = pickReport(bundle, "predictive");
+  const ref = cascade || predictive;
+  if (!ref) return [];
+  const b = ref.baselines || {};
+  const cheap = b.always_cheap || {};
+  const strong = b.always_strong || {};
+  const rand = b.random || {};
+  const oracle = ref.oracle || {};
+  const strongQ = num(strong.quality);
+  const strongCost = num(strong.cost);
+  const retOf = (q) => (strongQ > 0 ? pctInt(num(q) / strongQ) : "—");
+  const cutOf = (cost) => (strongCost > 0 ? pctInt(1 - num(cost) / strongCost) : "—");
+
+  const rows = [
+    {
+      name: "always-cheap", ours: false, note: "cost floor",
+      q: qStr(cheap.quality), spread: spreadStr(cheap.quality_spread),
+      cost: safe4(cheap.cost), ret: retOf(cheap.quality), cut: cutOf(cheap.cost),
+    },
+    {
+      name: "always-strong", ours: false, note: "reference",
+      q: qStr(strong.quality), spread: spreadStr(strong.quality_spread),
+      cost: safe4(strong.cost), ret: retOf(strong.quality), cut: cutOf(strong.cost),
+    },
+    {
+      name: "random @ cost", ours: false, note: "matched-cost chance",
+      q: qStr(rand.quality), spread: spreadStr(rand.quality_spread),
+      cost: safe4(rand.cost), ret: retOf(rand.quality), cut: cutOf(rand.cost),
+    },
+    strategyRow("FrugalRoute · cascade", cascade, "τ"),
+    strategyRow("FrugalRoute · predictive", predictive, "θ"),
+    {
+      name: "oracle (ceiling)", ours: false, note: "uses ground truth",
+      q: qStr(oracle.quality), spread: spreadStr(oracle.quality_spread),
+      cost: safe4(oracle.cost), ret: "—", cut: "—",
+    },
+  ];
+  return rows.map((r) => ({ ...r, nameColor: r.ours ? "var(--accent)" : "var(--ink-900)" }));
+}
+
+/** The leaderboard's frozen-split caption pieces, from the bundle (split-08 §2a). */
+export function frozenSplitNote(bundle) {
+  const fs = (bundle && bundle.frozen_split) || {};
+  const n = fs.n_test == null ? "" : String(fs.n_test);
+  return { n, wideCI: fs.small_n ? " · wide CI" : "" };
 }

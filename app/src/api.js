@@ -85,3 +85,31 @@ export function postRoute(body, opts) {
     opts,
   );
 }
+
+/**
+ * GET /eval/sample → the precomputed `EvalReport` bundle that powers the Frontier
+ * view: `{reports:[cascade,predictive], benchmark, frozen_split, generated_at}`.
+ * A missing bundle is a 404 → `ApiError(type:"not-found")`, which the UI renders
+ * as its honest N/A empty state (split-08 §4).
+ */
+export function getEvalSample(opts) {
+  return request("/eval/sample", undefined, opts);
+}
+
+/**
+ * POST /eval with {strategy, benchmark, quick:true} → a freshly-computed bundle
+ * (same shape as {@link getEvalSample}). Used by the optional live "Run eval"
+ * action; the view re-renders through the same mapping. Bounded/synchronous per
+ * the split-06 contract.
+ */
+export function postEval(body, opts) {
+  return request(
+    "/eval",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body || {}),
+    },
+    opts,
+  );
+}
