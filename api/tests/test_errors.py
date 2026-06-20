@@ -42,7 +42,7 @@ def test_malformed_sample_is_structured(
 def test_all_error_bodies_share_one_shape(client: TestClient) -> None:
     """Every typed error renders the same {error:{type,message,detail}} envelope."""
     cases = [
-        client.get("/api/route/stream"),  # 501 not-implemented
+        client.get("/api/route/stream"),  # 422 bad-request (no query/example_id)
         client.post("/api/route", json={"strategy": "cascade"}),  # 422 bad-request
         client.post("/api/route", json={"strategy": "cascade", "example_id": "nope"}),  # 404
     ]

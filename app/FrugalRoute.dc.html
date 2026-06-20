@@ -378,6 +378,8 @@ class Component extends DCLogic {
     view:'query', strategy:'cascade', tau:0.80,
     exampleId:'gsm8k-1142', queryText:'',
     phase:'idle', result:null, gate:null, error:null,
+    // split 09 — streamed cheap-answer preview + 429-backoff sublabel
+    candidate:null, retry:null,
     savedTotal:0, savedDisplay:0, runs:0, costDisplay:0, lastRunTau:0.80,
     frontierTau:0.80, revealed:false,
     theme:'light', showInfo:false, inspect:null,
@@ -423,7 +425,7 @@ class Component extends DCLogic {
     this.init();
     if((p.startView||this.state.view)==='frontier') this.enterFrontier();
   }
-  componentWillUnmount(){ this._mounted=false; this.clearTimers(); this.cancelTweens(); }
+  componentWillUnmount(){ this._mounted=false; this.clearTimers(); this.cancelTweens(); this.closeStream(); }
 
   // --- live data plumbing (split 07) ---------------------------------------
   fr(){ return (typeof window!=='undefined' && window.FR) ? window.FR : null; }
@@ -522,13 +524,13 @@ class Component extends DCLogic {
   replay = ()=> this.playReveal();
   toggleTheme = ()=> this.setState({theme:this.state.theme==='dark'?'light':'dark'});
   toggleInfo = ()=> this.setState({showInfo:!this.state.showInfo});
-  setCascade = ()=> this.setState({strategy:'cascade',phase:'idle',result:null,gate:null,costDisplay:0,error:null});
-  setPredictive = ()=> this.setState({strategy:'predictive',phase:'idle',result:null,gate:null,costDisplay:0,error:null});
+  setCascade = ()=>{ this.closeStream(); this.setState({strategy:'cascade',phase:'idle',result:null,gate:null,candidate:null,retry:null,costDisplay:0,error:null}); };
+  setPredictive = ()=>{ this.closeStream(); this.setState({strategy:'predictive',phase:'idle',result:null,gate:null,candidate:null,retry:null,costDisplay:0,error:null}); };
   onTau = (e)=> this.setState({tau:parseFloat(e.target.value)});
   onFrontierTau = (e)=> this.setState({frontierTau:parseFloat(e.target.value)});
   onQueryEdit = (e)=> this.setState({queryText:e.target.value});
   onSelectExample = (e)=>{ const id=e.target.value; const ex=(this.state.examples||[]).find(x=>x.id===id);
-    this.clearTimers(); this.setState({exampleId:id, queryText:ex?ex.query:this.state.queryText, phase:'idle', result:null, gate:null, costDisplay:0, error:null}); };
+    this.clearTimers(); this.closeStream(); this.setState({exampleId:id, queryText:ex?ex.query:this.state.queryText, phase:'idle', result:null, gate:null, candidate:null, retry:null, costDisplay:0, error:null}); };
   clearInspect = ()=> this.state.inspect && this.setState({inspect:null});
 
   // Build the /api/route request body. Sends example_id when the textarea still
@@ -545,24 +547,94 @@ class Component extends DCLogic {
     return body;
   }
 
+  // The live route. Opens an SSE stream to /api/route/stream and drives the
+  // stepper/candidate/gate/cost from real backend events (split 09); falls back
+  // to the synchronous POST /api/route when EventSource is unavailable or the
+  // stream fails before `done`. The CONTENT is always the real backend response.
   route = async ()=>{
     let FR=this.fr();
-    if(!FR){ try{ FR=await this.whenFr(); }catch(e){ this.setState({error:{type:'network-error',message:'The app could not load its API client.'},phase:'idle',result:null,gate:null}); return; } }
+    if(!FR){ try{ FR=await this.whenFr(); }catch(e){ this.setState({error:{type:'network-error',message:'The app could not load its API client.'},phase:'idle',result:null,gate:null,candidate:null,retry:null}); return; } }
     const text=(this.state.queryText||'').trim(); const ex=this.curEx();
-    if(!ex && !text){ this.setState({error:{type:'bad-request',message:'Enter a query to route.'},phase:'idle',result:null,gate:null}); return; }
-    this.clearTimers(); this.cancelTweens();
+    if(!ex && !text){ this.setState({error:{type:'bad-request',message:'Enter a query to route.'},phase:'idle',result:null,gate:null,candidate:null,retry:null}); return; }
+    this.clearTimers(); this.cancelTweens(); this.closeStream();
     const isC=this.state.strategy==='cascade', tau=this.state.tau, reduced=this.reducedMotion();
-    this.setState({phase:isC?'gen':'embed', result:null, gate:null, costDisplay:0, error:null, lastRunTau:tau});
-    // Brief optimistic phase flash for continuity (skipped under reduced motion).
-    // The CONTENT is always the real /api/route response — never a canned answer.
+    this.setState({phase:isC?'gen':'embed', result:null, gate:null, candidate:null, retry:null, costDisplay:0, error:null, lastRunTau:tau});
+    const body=this.routeBody();
+    if(!this.startStream(body, reduced)) this.routeViaPost(body, reduced);
+  };
+
+  // Open the EventSource and wire each event to a state update. Returns false if
+  // EventSource can't be created (→ caller uses the POST fallback). A transport
+  // error / early close before `done` falls back; a server `event: error` frame
+  // (it carries `data`) is surfaced as the error state.
+  startStream(body, reduced){
+    const FR=this.fr();
+    if(!FR || typeof EventSource==='undefined') return false;
+    let url; try{ url=FR.routeStreamUrl(body); }catch(e){ return false; }
+    let es; try{ es=new EventSource(url); }catch(e){ return false; }
+    this._es=es;
+    let done=false;
+    const fallback=()=>{ if(done) return; done=true; this.closeStream(); this.routeViaPost(body, reduced); };
+    const on=(name,fn)=> es.addEventListener(name,(e)=>{ if(!this._mounted) return; try{ fn(e); }catch(err){} });
+    on('phase',     (e)=> this.onStreamPhase(JSON.parse(e.data)));
+    on('candidate', (e)=> this.onStreamCandidate(JSON.parse(e.data)));
+    on('gate',      (e)=> this.onStreamGate(JSON.parse(e.data)));
+    on('cost',      (e)=> this.onStreamCost(JSON.parse(e.data), reduced));
+    on('retry',     (e)=> this.onStreamRetry(JSON.parse(e.data)));
+    on('refusal',   (e)=> this.onStreamRefusal(JSON.parse(e.data)));
+    on('done',      (e)=>{ done=true; this.closeStream(); this.onStreamDone(JSON.parse(e.data), reduced); });
+    es.addEventListener('error',(e)=>{
+      if(done){ this.closeStream(); return; }
+      if(!this._mounted){ this.closeStream(); return; }
+      // EventSource reuses "error" for BOTH a server-sent `event: error` frame
+      // (which carries .data) and transport failures (no .data).
+      if(e && typeof e.data==='string' && e.data){
+        done=true; this.closeStream();
+        let payload=null; try{ payload=JSON.parse(e.data); }catch(_){}
+        this.handleRouteError(payload || {type:'api-error', message:'The router returned an error.'});
+        return;
+      }
+      fallback();
+    });
+    return true;
+  }
+  closeStream(){ if(this._es){ try{ this._es.close(); }catch(e){} this._es=null; } }
+
+  // --- stream event handlers (each updates only its slice of state) ----------
+  onStreamPhase(d){ if(d && d.phase) this.setState({phase:d.phase, retry:null}); }
+  onStreamCandidate(d){ if(d) this.setState({candidate:{answer:(d.answer||''), tier:(d.tier||'')}}); }
+  onStreamGate(d){ if(d) this.setState({gate:{sufficient:!!d.sufficient, confidence:d.confidence, reason:d.reason||''}}); }
+  onStreamCost(d, reduced){
+    if(!d || typeof d.cost_usd_cumulative!=='number') return;
+    if(reduced) this.setState({costDisplay:d.cost_usd_cumulative});
+    else this.tween('costDisplay', d.cost_usd_cumulative, 350);
+  }
+  onStreamRetry(d){ if(d && d.stage) this.setState({retry:{stage:d.stage}}); }
+  // Informational: the terminal `done` carries the authoritative refusal state
+  // (conservative chip for a cheap refusal, alert card for an answering refusal).
+  onStreamRefusal(d){ this.setState({retry:null}); }
+  onStreamDone(res, reduced){
+    const FR=this.fr();
+    const result = FR && FR.format.mapResult(res, this.tiers());
+    if(!result){ this.handleRouteError({type:'api-error', message:'The router returned an unreadable response.'}); return; }
+    const newTotal = FR.format.accumulateSavings(this.state.savedTotal, result.cost, this.alwaysOpus());
+    this.setState({phase:'done', result, gate:result.gate, candidate:null, retry:null, error:null, savedTotal:newTotal, runs:this.state.runs+1});
+    if(reduced){ this.setState({costDisplay:result.cost, savedDisplay:newTotal}); }
+    else { this.tween('costDisplay', result.cost, 350); this.tween('savedDisplay', newTotal, 600); }
+  }
+
+  // Synchronous fallback (split 07 path): the optimistic phase flash + POST.
+  async routeViaPost(body, reduced){
+    const FR=this.fr();
+    if(!FR){ this.handleRouteError({type:'network-error', message:'The app could not load its API client.'}); return; }
     if(!reduced){ this.after(450,()=>{ const ph=this.state.phase;
       if(ph==='gen') this.setState({phase:'gate'}); else if(ph==='embed') this.setState({phase:'classify'}); }); }
     let res;
-    try { res = await FR.postRoute(this.routeBody()); }
+    try { res = await FR.postRoute(body); }
     catch(err){ this.handleRouteError(err); return; }
     if(!this._mounted) return;
     this.applyResult(res, reduced);
-  };
+  }
 
   applyResult(res, reduced){
     const FR=this.fr();
@@ -571,7 +643,7 @@ class Component extends DCLogic {
     const finalize=()=>{
       if(!this._mounted) return;
       const newTotal = FR.format.accumulateSavings(this.state.savedTotal, result.cost, this.alwaysOpus());
-      this.setState({phase:'done', result, gate:result.gate, error:null, savedTotal:newTotal, runs:this.state.runs+1});
+      this.setState({phase:'done', result, gate:result.gate, candidate:null, retry:null, error:null, savedTotal:newTotal, runs:this.state.runs+1});
       if(reduced){ this.setState({costDisplay:result.cost, savedDisplay:newTotal}); }
       else { this.tween('costDisplay', result.cost, 500); this.tween('savedDisplay', newTotal, 600); }
     };
@@ -581,10 +653,10 @@ class Component extends DCLogic {
   }
 
   handleRouteError(err){
-    this.clearTimers(); this.cancelTweens();
+    this.clearTimers(); this.cancelTweens(); this.closeStream();
     const error = (err && err.type) ? {type:err.type, message:err.message, status:err.status}
                 : {type:'api-error', message:(err&&err.message)||'The router returned an error.'};
-    this.setState({phase:'idle', result:null, gate:null, costDisplay:0, error});
+    this.setState({phase:'idle', result:null, gate:null, candidate:null, retry:null, costDisplay:0, error});
   }
 
   renderVals(){
@@ -609,9 +681,9 @@ class Component extends DCLogic {
     const band=F.savingsBand(S.savedTotal, S.savedDisplay, S.runs, alwaysOpus);
 
     // route stepper + the single-query view model (the 8 states) — pure + tested
-    const steps=F.normalizeSteps(F.buildSteps({strategy:S.strategy, phase:S.phase, result:S.result}));
+    const steps=F.normalizeSteps(F.buildSteps({strategy:S.strategy, phase:S.phase, result:S.result, retry:S.retry}));
     const sq=F.deriveSingleQuery({strategy:S.strategy, phase:S.phase, result:S.result, gate:S.gate,
-      costDisplay:S.costDisplay, tau:S.tau, config:S.config, error:S.error});
+      candidate:S.candidate, costDisplay:S.costDisplay, tau:S.tau, config:S.config, error:S.error});
 
     // ---- frontier — mapped from the live /api/eval/sample bundle (split 08) ----
     const bundle=S.bundle;

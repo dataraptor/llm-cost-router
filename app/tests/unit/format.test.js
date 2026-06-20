@@ -281,3 +281,23 @@ test("normalizeSteps shapes solid/hollow/hasLink/sub", () => {
   const n = normalizeSteps([{ label: "x", solid: true, hasLink: true, sub: "judging…" }]);
   assert.deepEqual(n[0], { label: "x", sub: "judging…", solid: true, hollow: false, hasLink: true });
 });
+
+// --- 429 retry sublabel (split 09) ----------------------------------------
+test("buildSteps retry → 'retrying (rate-limited)…' on the matching node only", () => {
+  const steps = buildSteps({ strategy: "cascade", phase: "gen", result: null, retry: { stage: "gen" } });
+  assert.equal(steps[0].sub, "retrying (rate-limited)…"); // overrides "generating…"
+  assert.equal(steps[1].sub, "");
+  assert.equal(steps[2].sub, "");
+});
+
+test("buildSteps retry on escalate node, predictive embed node", () => {
+  const cas = buildSteps({ strategy: "cascade", phase: "escalate", result: null, retry: { stage: "escalate" } });
+  assert.equal(cas[2].sub, "retrying (rate-limited)…");
+  const pred = buildSteps({ strategy: "predictive", phase: "embed", result: null, retry: { stage: "embed" } });
+  assert.equal(pred[0].sub, "retrying (rate-limited)…");
+});
+
+test("buildSteps without retry is unchanged (back-compat)", () => {
+  const steps = buildSteps({ strategy: "cascade", phase: "gate", result: null });
+  assert.equal(steps[1].sub, "judging…");
+});

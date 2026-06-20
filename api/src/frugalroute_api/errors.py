@@ -29,7 +29,6 @@ API_ERROR = "api-error"
 BAD_REQUEST = "bad-request"
 NOT_FOUND = "not-found"
 BATCH_PENDING = "batch-pending"
-NOT_IMPLEMENTED = "not-implemented"
 
 
 class ErrorBody(BaseModel):
@@ -86,10 +85,6 @@ def bad_request(message: str, detail: str | None = None, *, status_code: int = 4
 
 def not_found(message: str, detail: str | None = None) -> APIError:
     return APIError(404, NOT_FOUND, message, detail)
-
-
-def not_implemented(message: str, detail: str | None = None) -> APIError:
-    return APIError(501, NOT_IMPLEMENTED, message, detail)
 
 
 def translate_engine_error(exc: Exception) -> APIError:

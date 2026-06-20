@@ -4,7 +4,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { ApiError, getConfig, getExamples, postRoute, getEvalSample, postEval } from "../../src/api.js";
+import {
+  ApiError,
+  getConfig,
+  getExamples,
+  postRoute,
+  routeStreamUrl,
+  getEvalSample,
+  postEval,
+} from "../../src/api.js";
 
 /** A minimal fake Response. */
 function fakeRes(status, body) {
@@ -174,4 +182,28 @@ test("postEval POSTs {quick:true} to /eval and returns the fresh bundle", async 
   assert.equal(call.init.method, "POST");
   assert.deepEqual(JSON.parse(call.init.body), body);
   assert.deepEqual(out, bundle);
+});
+
+// --- routeStreamUrl (split 09): builds the EventSource GET URL --------------
+
+test("routeStreamUrl serializes only present params onto /route/stream", () => {
+  const url = routeStreamUrl({ strategy: "cascade", example_id: "gsm8k-1142", benchmark: "gsm8k", tau: 0.8 }, { base: BASE });
+  assert.ok(url.startsWith(BASE + "/route/stream?"));
+  const qs = new URLSearchParams(url.split("?")[1]);
+  assert.equal(qs.get("strategy"), "cascade");
+  assert.equal(qs.get("example_id"), "gsm8k-1142");
+  assert.equal(qs.get("benchmark"), "gsm8k");
+  assert.equal(qs.get("tau"), "0.8");
+  // absent params are omitted entirely (not sent as empty / "null")
+  assert.equal(qs.has("query"), false);
+  assert.equal(qs.has("theta"), false);
+});
+
+test("routeStreamUrl drops null/undefined and serializes a raw query", () => {
+  const url = routeStreamUrl({ strategy: "predictive", query: "2+2?", theta: 0.6, tau: null, example_id: undefined }, { base: BASE });
+  const qs = new URLSearchParams(url.split("?")[1]);
+  assert.equal(qs.get("query"), "2+2?");
+  assert.equal(qs.get("theta"), "0.6");
+  assert.equal(qs.has("tau"), false);
+  assert.equal(qs.has("example_id"), false);
 });

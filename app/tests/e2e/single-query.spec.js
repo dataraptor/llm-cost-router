@@ -5,14 +5,21 @@
 
 import { test, expect } from "@playwright/test";
 import * as F from "./fixtures.js";
+import { framesForResult, mockStream, failStream } from "./sse.js";
 
 const PAGE = "/FrugalRoute.dc.html";
 
-/** Register config+examples mocks (always) plus a per-test /route handler. */
+/** Register config+examples mocks (always) plus a per-test /route handler.
+ *
+ * split 09: the single-query view is driven by the SSE stream, so the `route`
+ * fixture is delivered as an event stream (its terminal `done`/`error` carries the
+ * fixture). The POST `/api/route` is also mocked as the fallback contract. */
 async function mockApi(page, { route, routeStatus = 200 } = {}) {
   await page.route("**/api/config", (r) => r.fulfill({ json: F.CONFIG }));
   await page.route("**/api/examples", (r) => r.fulfill({ json: F.EXAMPLES }));
   if (route !== undefined) {
+    const streamFixture = routeStatus >= 400 ? { error: route.error } : route;
+    await mockStream(page, framesForResult(streamFixture));
     await page.route("**/api/route", (r) =>
       r.fulfill({ status: routeStatus, contentType: "application/json", body: JSON.stringify(route) }),
     );
@@ -165,6 +172,9 @@ test("adversarial: empty answer + malformed gate + cost 0 → honest, no crash/N
 // --- non-JSON 500 (R10 continued) ------------------------------------------
 test("non-JSON 500 body → inline error card, dc-runtime stays alive", async ({ page }) => {
   await mockApi(page);
+  // Force the postRoute fallback (stream transport fails) and let it hit a
+  // non-JSON 500 — the client must still surface a structured error card.
+  await failStream(page);
   await page.route("**/api/route", (r) =>
     r.fulfill({ status: 500, contentType: "text/html", body: "<html>Internal Server Error</html>" }),
   );

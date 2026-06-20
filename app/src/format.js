@@ -177,23 +177,29 @@ export function provChips(config, report) {
  * Build the 3-node route stepper for the current phase/strategy/result.
  * Cascade: Haiku → gate → Opus (Opus stays hollow unless escalated/escalating).
  * Predictive: embed → classify → predicted-tier (NO gate node — split-07 R6).
+ *
+ * `retry` (split 09) is an optional `{stage}` from a streamed 429-backoff event;
+ * the matching node shows a "retrying (rate-limited)…" sublabel (overriding the
+ * phase sublabel) so the stream surfaces the wait honestly, never an error toast.
  */
-export function buildSteps({ strategy, phase, result, cheapName = "Haiku 4.5", strongName = "Opus 4.8" }) {
+export function buildSteps({ strategy, phase, result, retry, cheapName = "Haiku 4.5", strongName = "Opus 4.8" }) {
   const ph = phase;
   const r = result;
+  const retryStage = retry && retry.stage ? retry.stage : null;
+  const sub = (stage, normal) => (retryStage === stage ? "retrying (rate-limited)…" : normal);
   if (strategy === "cascade") {
     const gateOn = ph === "gate" || ph === "escalate" || ph === "done";
     const opusOn = (ph === "done" && r && r.escalated) || ph === "escalate";
     return [
-      { label: cheapName, solid: ph !== "idle", sub: ph === "gen" ? "generating…" : "", hasLink: false },
-      { label: "gate", solid: gateOn, sub: ph === "gate" ? "judging…" : "", hasLink: true },
-      { label: strongName, solid: opusOn, sub: ph === "escalate" ? "escalating…" : "", hasLink: true },
+      { label: cheapName, solid: ph !== "idle", sub: sub("gen", ph === "gen" ? "generating…" : ""), hasLink: false },
+      { label: "gate", solid: gateOn, sub: sub("gate", ph === "gate" ? "judging…" : ""), hasLink: true },
+      { label: strongName, solid: opusOn, sub: sub("escalate", ph === "escalate" ? "escalating…" : ""), hasLink: true },
     ];
   }
   const strong = r ? !!r.escalated : false;
   return [
-    { label: "embed", solid: ph !== "idle", sub: ph === "embed" ? "embedding…" : "", hasLink: false },
-    { label: "classify", solid: ph === "classify" || ph === "done", sub: ph === "classify" ? "predicting…" : "", hasLink: true },
+    { label: "embed", solid: ph !== "idle", sub: sub("embed", ph === "embed" ? "embedding…" : ""), hasLink: false },
+    { label: "classify", solid: ph === "classify" || ph === "done", sub: sub("classify", ph === "classify" ? "predicting…" : ""), hasLink: true },
     { label: strong ? strongName : cheapName, solid: ph === "done" && strong, sub: "", hasLink: true },
   ];
 }
@@ -221,6 +227,7 @@ export function normalizeSteps(steps) {
  * @param {string}      ctx.phase      "idle"|"gen"|"embed"|"gate"|"classify"|"escalate"|"done"
  * @param {object|null} ctx.result     mapped RouteResult (from {@link mapResult}) or null
  * @param {object|null} ctx.gate       the gate verdict to display (cascade)
+ * @param {object|null} ctx.candidate  streamed cheap-answer preview {answer,tier} or null
  * @param {number}      ctx.costDisplay tweened cost (USD)
  * @param {number}      ctx.tau        the operating-point slider value (τ or θ)
  * @param {object|null} ctx.config     /config payload (for the always-Opus ref)
@@ -232,6 +239,10 @@ export function deriveSingleQuery(ctx) {
   const ph = phase;
   const isError = !!error;
   const missingKey = isError && error.type === "missing-key";
+  // Streamed cheap-answer preview (split 09): shown ink-400 italic while the gate
+  // is still judging, then replaced by the real result on `done`. Never a final answer.
+  const cand = ctx.candidate && ctx.candidate.answer ? ctx.candidate : null;
+  const showCandidate = !isError && !r && !!cand;
 
   // --- error card -----------------------------------------------------------
   const errorTitle = missingKey ? "Live routing unavailable" : "Routing error";
@@ -247,7 +258,7 @@ export function deriveSingleQuery(ctx) {
   const tauPct = Math.round(clamp01(tau) * 100);
 
   // --- answer ---------------------------------------------------------------
-  const showAnswer = !isError && !!r;
+  const showAnswer = !isError && (!!r || showCandidate);
   let answerText = "";
   let answerHeading = "Answer";
   let answerBorder = "var(--line)";
@@ -256,6 +267,15 @@ export function deriveSingleQuery(ctx) {
   let tierNameStr = "";
   let tierSolid = false;
   let latencyStr = "";
+  if (!r && showCandidate) {
+    // Candidate preview — the cheap answer, clearly provisional (italic, ink-400),
+    // no latency/correctness yet. The gate is still deciding.
+    tierNameStr = tierName(cand.tier);
+    answerText = cand.answer;
+    answerHeading = "Candidate · " + tierName(cand.tier);
+    answerColor = "var(--ink-400)";
+    answerStyle = "italic";
+  }
   if (r) {
     tierNameStr = r.tierName;
     tierSolid = !!r.strong;

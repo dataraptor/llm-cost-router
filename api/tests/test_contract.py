@@ -89,7 +89,9 @@ def test_eval_report_roundtrip(
     assert served["reports"][0] == expected  # field-for-field, no drift
 
 
-def test_stream_placeholder_501(client: TestClient) -> None:
+def test_stream_no_input_is_structured_422(client: TestClient) -> None:
+    # split-09: the stream endpoint is live; with neither query nor example_id it
+    # fails pre-stream with the standard structured 422 (not an empty 200 stream).
     resp = client.get("/api/route/stream")
-    assert resp.status_code == 501
-    assert resp.json()["error"]["type"] == "not-implemented"
+    assert resp.status_code == 422
+    assert resp.json()["error"]["type"] == "bad-request"

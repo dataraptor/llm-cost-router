@@ -44,9 +44,16 @@ from frugalroute.metrics import (
     oracle,
     retention,
 )
-from frugalroute.models import EvalReport, FrontierPoint, GateVerdict, RouteResult
+from frugalroute.models import (
+    EvalReport,
+    FrontierPoint,
+    GateVerdict,
+    RouteResult,
+    route_result_from_dict,
+    route_result_to_dict,
+)
 from frugalroute.prompts import PROMPT_VERSION
-from frugalroute.router import route
+from frugalroute.router import RouteEvent, route, route_events
 
 __all__ = [
     "DEFAULT_EMBEDDER",
@@ -61,6 +68,7 @@ __all__ = [
     "GateVerdict",
     "LabelRun",
     "PredictiveRouter",
+    "RouteEvent",
     "RouteResult",
     "Router",
     "accuracy",
@@ -90,6 +98,9 @@ __all__ = [
     "oracle",
     "retention",
     "route",
+    "route_events",
+    "route_result_from_dict",
+    "route_result_to_dict",
     "run_eval",
     "save_router",
     "train",

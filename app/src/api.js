@@ -73,6 +73,27 @@ export function getExamples(opts) {
   return request("/examples", undefined, opts);
 }
 
+// Query-string params the stream endpoint accepts (EventSource is GET-only).
+const STREAM_PARAMS = ["strategy", "query", "example_id", "benchmark", "tau", "theta"];
+
+/**
+ * Build the `GET /route/stream` URL for an EventSource from a route body.
+ * Pure (no DOM) so it is unit-testable; the dc-runtime passes the result to
+ * `new EventSource(url)`. Only present, non-null params are serialized.
+ *
+ * @param {object} body  same shape as {@link postRoute}'s body
+ * @param {object} [opts] {base} to override the resolved API base (tests)
+ */
+export function routeStreamUrl(body, opts = {}) {
+  const base = opts.base !== undefined ? opts.base : apiBaseUrl();
+  const params = new URLSearchParams();
+  const b = body || {};
+  for (const key of STREAM_PARAMS) {
+    if (b[key] !== undefined && b[key] !== null) params.set(key, String(b[key]));
+  }
+  return base + "/route/stream?" + params.toString();
+}
+
 /** POST /route with {strategy, query|example_id, benchmark?, tau?, theta?} → RouteResponse. */
 export function postRoute(body, opts) {
   return request(

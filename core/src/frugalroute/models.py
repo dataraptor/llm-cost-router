@@ -17,6 +17,7 @@ predictive UI, and are annotated below:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -54,6 +55,54 @@ class RouteResult:
     cost_usd: float
     latency_s: float
     prompt_version: str
+
+
+def route_result_to_dict(result: RouteResult) -> dict[str, Any]:
+    """Serialize a ``RouteResult`` to a plain JSON-ready dict (§7 fields only).
+
+    The ``gate`` (a :class:`GateVerdict`) is flattened via ``model_dump``; every
+    other field is already JSON-native. This is the canonical ``done``-event
+    payload of the streaming router (split 09) and round-trips losslessly with
+    :func:`route_result_from_dict`.
+    """
+    return {
+        "query": result.query,
+        "strategy": result.strategy,
+        "tier_used": result.tier_used,
+        "escalated": result.escalated,
+        "answer": result.answer,
+        "correct": result.correct,
+        "gate": result.gate.model_dump() if result.gate is not None else None,
+        "p_strong": result.p_strong,
+        "refused": result.refused,
+        "cost_usd": result.cost_usd,
+        "latency_s": result.latency_s,
+        "prompt_version": result.prompt_version,
+    }
+
+
+def route_result_from_dict(data: dict[str, Any]) -> RouteResult:
+    """Rebuild a ``RouteResult`` from :func:`route_result_to_dict` output.
+
+    The inverse of :func:`route_result_to_dict`; reconstructs the ``gate``
+    :class:`GateVerdict` when present. Used by the API to re-derive the full
+    response (with the §7 derived extras) from a streamed ``done`` event.
+    """
+    gate = data.get("gate")
+    return RouteResult(
+        query=data["query"],
+        strategy=data["strategy"],
+        tier_used=data["tier_used"],
+        escalated=data["escalated"],
+        answer=data["answer"],
+        correct=data.get("correct"),
+        gate=GateVerdict(**gate) if gate is not None else None,
+        p_strong=data.get("p_strong"),
+        refused=data["refused"],
+        cost_usd=data["cost_usd"],
+        latency_s=data["latency_s"],
+        prompt_version=data["prompt_version"],
+    )
 
 
 @dataclass

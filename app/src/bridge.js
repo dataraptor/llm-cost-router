@@ -18,6 +18,7 @@ window.FR = {
   getConfig: api.getConfig,
   getExamples: api.getExamples,
   postRoute: api.postRoute,
+  routeStreamUrl: api.routeStreamUrl,
   getEvalSample: api.getEvalSample,
   postEval: api.postEval,
   ApiError: api.ApiError,

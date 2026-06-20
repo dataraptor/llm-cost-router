@@ -249,3 +249,51 @@ test("R10: costDisplay NaN/undefined → '0.0000' (never $undefined)", () => {
   const v = deriveSingleQuery(ctx({ phase: "gen", costDisplay: undefined }));
   assert.equal(v.costStr, "0.0000");
 });
+
+// --- Streaming candidate preview (split 09) -------------------------------
+test("stream: candidate during gate → italic ink-400 preview, no correctness/refusal", () => {
+  const v = deriveSingleQuery(
+    ctx({ phase: "gate", candidate: { answer: "April: 48. May: 24. Total = 72.", tier: "claude-haiku-4-5" } }),
+  );
+  assert.equal(v.showAnswer, true);
+  assert.equal(v.answerText, "April: 48. May: 24. Total = 72.");
+  assert.match(v.answerHeading, /Candidate · Haiku 4\.5/);
+  assert.equal(v.answerStyle, "italic");
+  assert.equal(v.answerColor, "var(--ink-400)");
+  assert.equal(v.tierHollow, true); // cheap candidate isn't the strong tier
+  assert.equal(v.latencyStr, ""); // no latency until done
+  assert.equal(v.showCorrectNote, false); // provisional → no correctness note yet
+  assert.equal(v.showRefuseStrong, false);
+});
+
+test("stream: the real result replaces the candidate on done", () => {
+  const result = mapResult(
+    {
+      strategy: "cascade",
+      tier_used: "claude-haiku-4-5",
+      escalated: false,
+      answer: "The answer is 72.",
+      gate: { sufficient: true, confidence: 0.91, reason: "commits" },
+      refused: false,
+      cost_usd: 0.0018,
+      latency_s: 0.9,
+      cost_breakdown: { label: "= Haiku + gate", always_strong_usd: 0.007, exceeds_always_strong: false },
+    },
+    TIERS,
+  );
+  // Even if a stale candidate is still in ctx, a present result wins.
+  const v = deriveSingleQuery(
+    ctx({ phase: "done", result, gate: result.gate, candidate: { answer: "stale", tier: "claude-haiku-4-5" } }),
+  );
+  assert.equal(v.answerText, "The answer is 72.");
+  assert.equal(v.answerHeading, "Accepted at Haiku 4.5");
+  assert.equal(v.showCorrectNote, true);
+});
+
+test("stream: a candidate is suppressed while an error is showing", () => {
+  const v = deriveSingleQuery(
+    ctx({ phase: "gate", candidate: { answer: "x", tier: "claude-haiku-4-5" }, error: { type: "api-error", message: "boom" } }),
+  );
+  assert.equal(v.showError, true);
+  assert.equal(v.showAnswer, false); // error trumps the candidate preview
+});

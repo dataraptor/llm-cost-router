@@ -11,12 +11,13 @@ from __future__ import annotations
 import datetime as _dt
 import json
 import os
-from typing import Any
+from collections.abc import Iterator
+from typing import Any, Literal
 
 import frugalroute
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from frugalroute import llm
 from frugalroute.harness import (
     QUICK_TAUS,
@@ -24,7 +25,9 @@ from frugalroute.harness import (
     report_from_dict,
     report_to_dict,
 )
+from frugalroute.models import route_result_from_dict
 from frugalroute.prompts import PROMPT_VERSION
+from pydantic import ValidationError
 
 from frugalroute_api import config as cfg
 from frugalroute_api import errors, schemas
@@ -196,12 +199,72 @@ def create_app() -> FastAPI:
             generated_at=_now_iso(),
         )
 
-    # --- Streaming placeholder (split 09) ------------------------------------
+    # --- Route (live single query, streamed as SSE) --------------------------
     @app.get(f"{prefix}/route/stream", tags=["route"])
-    def route_stream() -> Any:
-        raise errors.not_implemented(
-            "Streaming routing (SSE) is implemented in a later split. Use POST "
-            f"{prefix}/route for the synchronous result.",
+    def route_stream(
+        strategy: Literal["cascade", "predictive"] = Query("cascade"),
+        query: str | None = Query(default=None, max_length=schemas.MAX_QUERY_CHARS),
+        example_id: str | None = Query(default=None),
+        benchmark: Literal["gsm8k", "mmlu"] | None = Query(default=None),
+        tau: float | None = Query(default=None, ge=0.0, le=1.0),
+        theta: float | None = Query(default=None, ge=0.0, le=1.0),
+        settings: Settings = Depends(get_settings),
+    ) -> StreamingResponse:
+        # Validate (incl. "exactly one of query|example_id") and resolve BEFORE
+        # streaming, so bad input is a clean pre-stream 422/404, not a 200 empty
+        # stream. FastAPI already validated the scalar bounds (tau/theta/strategy).
+        try:
+            req = schemas.RouteRequest(
+                strategy=strategy,
+                query=query,
+                example_id=example_id,
+                benchmark=benchmark,
+                tau=tau,
+                theta=theta,
+            )
+        except ValidationError as exc:
+            raise errors.bad_request(
+                "Request validation failed.", detail=str(exc), status_code=422
+            ) from exc
+        resolved_query, resolved_benchmark = _resolve_query(req)
+        tau_used = req.tau if req.tau is not None else cfg.DEFAULT_TAU
+        theta_used = req.theta if req.theta is not None else cfg.DEFAULT_THETA
+        always_strong_usd = cfg.always_strong_cost_ref_usd(settings)
+
+        def gen() -> Iterator[str]:
+            try:
+                client = resolve_client(settings)
+                router = _load_router_or_none(settings) if req.strategy == "predictive" else None
+                for event in frugalroute.route_events(
+                    resolved_query,
+                    strategy=req.strategy,
+                    benchmark=resolved_benchmark,
+                    tau=tau_used,
+                    theta=theta_used,
+                    client=client,
+                    router=router,
+                ):
+                    if event.type == "done":
+                        # Re-derive the FULL response (with §7 extras) from the
+                        # serialized RouteResult so the terminal `done` body is
+                        # byte-identical to POST /api/route for the same inputs.
+                        result = route_result_from_dict(event.data)
+                        payload = schemas.route_response(
+                            result, theta_used=theta_used, always_strong_usd=always_strong_usd
+                        ).model_dump()
+                        yield _sse_frame("done", payload)
+                    else:
+                        yield _sse_frame(event.type, event.data)
+            except errors.APIError as exc:
+                yield _sse_frame("error", {"type": exc.error_type, "message": exc.message})
+            except Exception as exc:  # noqa: BLE001 - surfaced as a typed error event
+                api_err = errors.translate_engine_error(exc)
+                yield _sse_frame("error", {"type": api_err.error_type, "message": api_err.message})
+
+        return StreamingResponse(
+            gen(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
     # --- Root → docs ----------------------------------------------------------
@@ -260,6 +323,11 @@ def _load_sample_bundle(settings: Settings) -> dict[str, Any]:
         "frozen_split": bundle.get("frozen_split"),
         "generated_at": bundle.get("generated_at"),
     }
+
+
+def _sse_frame(event_type: str, data: dict[str, Any]) -> str:
+    """Render one Server-Sent Event frame: ``event: <type>\\ndata: <json>\\n\\n``."""
+    return f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
 
 
 def _now_iso() -> str:
