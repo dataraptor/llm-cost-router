@@ -1,0 +1,15 @@
+{
+  "name": "frugalroute-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "FrugalRoute web frontend — dc-runtime Design Component wired to the live API.",
+  "scripts": {
+    "test": "node --test \"tests/unit/**/*.test.js\"",
+    "test:e2e": "playwright test",
+    "serve": "node tests/e2e/static-server.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

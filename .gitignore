@@ -221,3 +221,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Node / frontend (app, split 07)
+node_modules/
+app/test-results/
+app/playwright-report/
+app/.playwright/
