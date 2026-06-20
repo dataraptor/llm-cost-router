@@ -1,0 +1,26 @@
+version: 2
+# Keep CI actions and the package manifests fresh. Grouped + monthly to keep the
+# PR volume low for a portfolio repo; the no-key ci.yml gate vets every bump.
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: pip
+    directory: "/core"
+    schedule:
+      interval: monthly
+
+  - package-ecosystem: pip
+    directory: "/api"
+    schedule:
+      interval: monthly
+
+  - package-ecosystem: npm
+    directory: "/app"
+    schedule:
+      interval: monthly

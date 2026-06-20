@@ -59,3 +59,15 @@ markers = [
     "api: tests that call the live Anthropic API; auto-skipped when ANTHROPIC_API_KEY is unset",
     "azure: tests that call the live Azure OpenAI gpt-5.5 backend; auto-skipped when AZURE_OPENAI_API_KEY is unset",
 ]
+
+[tool.coverage.report]
+# Single source of truth for the CI no-key coverage floor (split 12). The thin
+# adapter sits at ~99%; this floor bites on a real regression without flaking.
+fail_under = 96
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "\\.\\.\\.",
+]

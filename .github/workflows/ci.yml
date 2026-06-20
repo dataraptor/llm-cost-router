@@ -1,0 +1,158 @@
+name: CI
+
+# The no-key quality gate. Runs on every push and PR; requires NO secrets, so
+# pull requests from forks pass end to end. These are the exact commands every
+# split's Definition of Done runs locally (see PROGRESS.md / Makefile) — green CI
+# is, by construction, green local DoD. The expensive live `@api` suite lives in
+# a separate, secret-gated workflow (api-tests.yml) and never blocks this gate.
+
+on:
+  push:
+  pull_request:
+
+# Cancel superseded runs on the same ref (saves CI minutes on rapid pushes).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint-type:
+    name: Lint + types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            core/pyproject.toml
+            api/pyproject.toml
+      - name: Install (engine + api, editable with dev tools)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "core[dev]" -e "api[dev]"
+      - name: ruff format --check
+        run: ruff format --check core/src core/tests api/src api/tests eval
+      - name: ruff check
+        run: ruff check core/src core/tests api/src api/tests eval
+      # mypy is run from inside each package so its strict per-package config
+      # applies (the root-form invocation falls back to non-strict defaults —
+      # PROGRESS.md split-01 decision (e)).
+      - name: mypy core (strict)
+        run: cd core && mypy src/frugalroute
+      - name: mypy api (strict)
+        run: cd api && mypy src/frugalroute_api
+
+  test-python:
+    name: Python no-key tests (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            core/pyproject.toml
+            api/pyproject.toml
+      - name: Install (engine + api, editable with dev tools)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "core[dev]" -e "api[dev]"
+      # core and api are separate packages (each its own rootdir) that share some
+      # test basenames, so they run as separate pytest invocations (Makefile /
+      # PROGRESS.md split-10 decision (f)). The coverage floor is the
+      # `fail_under` in each pyproject's [tool.coverage.report] (single source of
+      # truth) — a drop below it fails the run.
+      - name: core tests + coverage gate
+        run: >-
+          pytest core/tests -m "not api and not azure" -q
+          --cov=frugalroute --cov-report=term-missing
+          --cov-report=xml:coverage-core.xml
+      - name: api tests + coverage gate
+        run: >-
+          pytest api/tests -m "not api and not azure" -q
+          --cov=frugalroute_api --cov-report=term-missing
+          --cov-report=xml:coverage-api.xml
+      - name: integration tests (no-key)
+        run: pytest tests/integration -m "not api and not azure" -q
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-py${{ matrix.python-version }}
+          path: |
+            coverage-core.xml
+            coverage-api.xml
+          if-no-files-found: ignore
+
+  test-frontend:
+    name: Frontend unit + e2e
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Unit tests (node --test — the gate)
+        run: npm test
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: e2e (Playwright vs mock API, headless)
+        run: npm run test:e2e
+
+  build-smoke:
+    name: Package + boot smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            core/pyproject.toml
+            api/pyproject.toml
+      - name: Install (engine + api)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "core[dev]" -e "api[dev]"
+      - name: Import smoke
+        run: python -c "import frugalroute, frugalroute_api; print('imports ok')"
+      - name: Boot uvicorn + curl the no-key endpoints
+        run: |
+          python -m uvicorn frugalroute_api.app:app --port 8000 &
+          UVICORN_PID=$!
+          trap 'kill $UVICORN_PID 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8000/api/health && break
+            sleep 1
+          done
+          echo "--- /api/health ---"  && curl -sf http://localhost:8000/api/health
+          echo "--- /api/config ---"  && curl -sf http://localhost:8000/api/config > /dev/null && echo ok
+          echo "--- /api/eval/sample ---" && curl -sf http://localhost:8000/api/eval/sample > /dev/null && echo ok
+      - name: Serve the app over HTTP + curl it
+        run: |
+          node app/tests/e2e/static-server.mjs 5500 &
+          APP_PID=$!
+          trap 'kill $APP_PID 2>/dev/null || true' EXIT
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:5500/FrugalRoute.dc.html > /dev/null && break
+            sleep 1
+          done
+          curl -sf http://localhost:5500/FrugalRoute.dc.html > /dev/null && echo "app serves ok"

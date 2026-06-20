@@ -1,0 +1,61 @@
+name: API tests (live)
+
+# The EXPENSIVE, secret-gated suite: the `@api` tests that make real Anthropic
+# API calls. It never runs on a plain push/PR (so forks and contributors without
+# the secret are never blocked — that is ci.yml's job) and it skips cleanly when
+# the ANTHROPIC_API_KEY secret is absent. Triggered manually or nightly only.
+#
+# Cost note: the @api smokes are bounded single-query / --quick (small n) calls —
+# a handful of cheap+strong generations plus one gate per item. Estimated spend
+# per run is well under US$0.05 at the pinned Haiku/Opus pricing.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Nightly at 06:00 UTC.
+    - cron: "0 6 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  api-tests:
+    name: Live @api smoke
+    runs-on: ubuntu-latest
+    # The secret is exposed as an env var; a guard step decides whether to run
+    # (GitHub does not allow `secrets.*` directly in a job/step `if:`).
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Guard — is the secret present?
+        id: guard
+        run: |
+          if [ -z "${ANTHROPIC_API_KEY}" ]; then
+            echo "No ANTHROPIC_API_KEY secret set — skipping the live @api suite." \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ANTHROPIC_API_KEY present — running the live @api suite (est. < \$0.05/run)." \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-python@v5
+        if: steps.guard.outputs.run == 'true'
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            core/pyproject.toml
+            api/pyproject.toml
+      - name: Install (engine + api)
+        if: steps.guard.outputs.run == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "core[dev]" -e "api[dev]"
+      - name: core @api smoke
+        if: steps.guard.outputs.run == 'true'
+        run: pytest core/tests -m "api" -q
+      - name: api @api smoke
+        if: steps.guard.outputs.run == 'true'
+        run: pytest api/tests -m "api" -q

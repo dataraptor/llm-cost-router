@@ -1,5 +1,7 @@
 # FrugalRoute
 
+[![CI](https://github.com/dataraptor/llm-cost-router/actions/workflows/ci.yml/badge.svg)](https://github.com/dataraptor/llm-cost-router/actions/workflows/ci.yml)
+
 **An LLM cost-optimizing router that picks the cheapest model good enough for each
 query — and proves the savings on a cost-quality Pareto frontier.**
 
@@ -214,6 +216,14 @@ pytest api/tests  -m "not api and not azure" -q
 pytest tests/integration -m "not api and not azure" -q
 cd app && npm test && npm run test:e2e && npm run test:integration
 ```
+
+Every push and PR runs these exact no-key gates in CI
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) — lint, types, the no-key
+suites with a coverage floor, the frontend unit/e2e tests, and a package/boot smoke.
+The live `@api` suite is secret-gated and nightly-only
+([`api-tests.yml`](.github/workflows/api-tests.yml)). See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the full gate list, the no-key vs `@api`
+split, and branch-protection guidance.
 
 ---
 
