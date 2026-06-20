@@ -33,7 +33,7 @@ frugalroute = "frugalroute.cli:main"
 # Live-demo backend: the supplied key is Azure OpenAI gpt-5.5, driven through the
 # Anthropic-shaped adapter in frugalroute.azure_client (imported lazily).
 azure = [
-    "openai>=1.30,<2",
+    "openai>=1.30,<3",
 ]
 # Local-embedding backend for the predictive router (split 04). Heavy (pulls
 # torch); imported lazily inside ``frugalroute.embed.get_embedder`` so the no-key
@@ -46,7 +46,7 @@ dev = [
     "pytest-cov>=5",
     "ruff>=0.6",
     "mypy>=1.11",
-    "openai>=1.30,<2",
+    "openai>=1.30,<3",
 ]
 
 [tool.hatch.build.targets.wheel]
