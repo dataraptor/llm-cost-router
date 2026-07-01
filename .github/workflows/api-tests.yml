@@ -27,7 +27,7 @@ jobs:
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Guard — is the secret present?
         id: guard
         run: |
@@ -40,7 +40,7 @@ jobs:
               | tee -a "$GITHUB_STEP_SUMMARY"
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         if: steps.guard.outputs.run == 'true'
         with:
           python-version: "3.12"
